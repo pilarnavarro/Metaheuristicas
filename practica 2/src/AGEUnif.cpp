@@ -238,9 +238,13 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
 
 
 void pairMutation(solution &s1,solution &s2, const double &mut_prob,const vector<vector<double> > &matrix){
+    int pos;
     //Generamos un número aleatorio en [0,1]
-    if((float) rand()/RAND_MAX < mut_prob)  mutateSolution(s1,matrix);
-    if((float) rand()/RAND_MAX < mut_prob)  mutateSolution(s2,matrix);
+    if((float) rand()/RAND_MAX < 2*mut_prob){
+        pos=rand()%2;  //0 ó 1 aleatorio
+        if(pos==0) mutateSolution(s1,matrix);
+        else    mutateSolution(s2,matrix);
+    }  
 }
 
 //Operador de reparación
@@ -321,8 +325,30 @@ void pairCross(const solution &p1, const solution &p2, solution &s1, solution &s
 
 void replace(population &pop, const solution &s1, const solution &s2){
     pair<int,int> worst_pos=worstSolutions(pop);
-    pop.solutions[worst_pos.first]=s1;
-    pop.solutions[worst_pos.second]=s2;
+    solution worst_sol, best_sol;
+
+    if(s1.fitness<s2.fitness){
+        worst_sol=s1;
+        best_sol=s2;
+    }else{
+        worst_sol=s2;
+        best_sol=s1;
+    } 
+
+    if(pop.solutions[worst_pos.first].fitness<worst_sol.fitness && pop.solutions[worst_pos.second].fitness<best_sol.fitness){
+            pop.solutions[worst_pos.first]=worst_sol;
+            pop.solutions[worst_pos.second]=best_sol;
+            if(best_sol.fitness>pop.best_fitness){
+                pop.best_fitness=best_sol.fitness;
+                pop.best_sol=worst_pos.second;
+            }
+    }else if(pop.solutions[worst_pos.first].fitness<best_sol.fitness){
+            pop.solutions[worst_pos.first]=best_sol;
+            if(best_sol.fitness>pop.best_fitness){
+                pop.best_fitness=best_sol.fitness;
+                pop.best_sol=worst_pos.first;
+            }
+    }
 }
 
 void UniformAGE(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
@@ -343,13 +369,13 @@ void UniformAGE(const vector<vector<double> > &matrix, const unsigned int &num_s
         pairSelection(pop,p1,p2);
         pairCross(p1,p2,s1,s2,num_sel,matrix);
         pairMutation(s1,s2,mut_prob,matrix);
-        // s1.fitness=fitness(s1.elements,matrix);
-        // s1.evaluated=true;
-        // s2.fitness=fitness(s2.elements,matrix);
-        // s2.evaluated=true;
-        evaluatePopulation(pop,matrix,evaluations);
+        s1.fitness=fitness(s1.elements,matrix);
+        s1.evaluated=true;
+        s2.fitness=fitness(s2.elements,matrix);
+        s2.evaluated=true;
+        evaluations+=2;
+        //evaluatePopulation(pop,matrix,evaluations);
         replace(pop,s1,s2);
-        //evaluations+=2;
         //generations++;
         //cout << "Iterations: " << evaluations << " <-> Fitnes: " << pop.best_fitness <<endl;
     }
