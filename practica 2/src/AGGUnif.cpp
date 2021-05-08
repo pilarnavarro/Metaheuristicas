@@ -1,8 +1,8 @@
 #include <iostream>
 #include <assert.h>
 #include <vector>
-#include <algorithm>
-#include <random>
+#include <algorithm>    // shuffle and find
+#include <random>       // rand and srand
 #include <iomanip>      // setprecision
 #include <limits>       // numeric_limits<double>::infinity()
 
@@ -178,7 +178,7 @@ int worstSolution(const population &pop){
 /*Función que implementa el torneo binario, esto es, 
 selecciona dos soluciones aleatorias de la población 'pop'
 y devuelve la posición de la que tiene un fitness mayor
-de entre las dos seleccionadas */
+de entre las dos seleccionadas*/
 int binaryCompetition(const population &pop){
     int size=pop.solutions.size();
     int rand1 = rand()%size;
@@ -202,7 +202,8 @@ void selection(population &new_pop, const population &old_pop){
     }
 }
 
-/**/
+/*Intercambia los valores de dos posiciones aleatorias de la solución 
+'sol' que tengan distinto valor*/
 void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
     int pos1, pos2;
     int size=sol.elements.size();
@@ -224,7 +225,9 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
     sol.evaluated=false;
 }
 
-
+/*  Operador de mutación.
+    Muta una solución aleatoria de la población 'pop',
+    con probabilidad 'mut_prob'*/
 void mutation(population &pop,const double &mut_prob,const vector<vector<double> > &matrix){
     int pos=0;
     int num_mut = mut_prob*pop.solutions.size();
@@ -235,7 +238,11 @@ void mutation(population &pop,const double &mut_prob,const vector<vector<double>
     }
 }
 
-//Operador de reparación
+/* Operador de reparación.
+Comprueba si la solución 'sol' es factible, y en caso de 
+no serlo, elimina los elementos sobrantes que contribuyen más a la solución 
+o añade elementos que faltan que contribuyan más a dicha solución.
+*/
 void repair(solution &sol, const int &num_sel, const vector<vector<double> > &matrix){
     int selected=0;
     int max_contrib=0, max_pos=-1, contrib;
@@ -305,18 +312,25 @@ void UniformCross(const solution &father, const solution &mother, solution &son,
     son.evaluated=false;
 }
 
+/*Implementa el cruce, donde se generan dos nuevas soluciones hijas
+a partir de dos soluciones padre de la población pop, 
+haciendo uso del operador de cruce uniforme.
+Las nuevas soluciones sustituyen a los padres y cada
+pareja de soluciones se cruza con probabilidad 'cross_prob'*/
 void cross(population &pop, const double &cross_prob, const int &num_sel,const vector<vector<double> > &matrix){
     solution sol1,sol2;
-    int num_cross=cross_prob*pop.solutions.size()/2;
+    int num_cross=cross_prob*pop.solutions.size()/2;    //Número esperado de soluciones que cruzan
     for(unsigned i = 0; i < num_cross ; i++){
-        UniformCross(pop.solutions[2*i], pop.solutions[2*i+1], sol1, num_sel,matrix);
+        UniformCross(pop.solutions[2*i], pop.solutions[2*i+1], sol1, num_sel,matrix);  //Se cruzan soluciones consecutivas en la población
         UniformCross(pop.solutions[2*i], pop.solutions[2*i+1], sol2, num_sel,matrix);
-        pop.solutions[2*i] = sol1;
+        pop.solutions[2*i] = sol1;      //Las nuevas soluciones generadas sustituyen a los padres
         pop.solutions[2*i+1] = sol2;
     }
 }
 
-
+/*Se reemplaza la población 'old_pop' por 'new_pop',
+manteniendo la mejor solución de 'old_pop' en caso de 
+ser mejor que la mejor solución de 'new_pop'*/
 void replace(population &old_pop, population &new_pop, const vector<vector<double> > &matrix){
     int pos=-1;
 
@@ -324,7 +338,7 @@ void replace(population &old_pop, population &new_pop, const vector<vector<doubl
     //la guardamos en la posición de la población nueva que contine a la peor solución
     if(old_pop.best_fitness > new_pop.best_fitness){
         new_pop.best_fitness = old_pop.best_fitness;
-        pos= worstSolution(new_pop); //new_pop.solutions.size()-1;
+        pos= worstSolution(new_pop);
         new_pop.solutions[pos]=old_pop.solutions[old_pop.best_sol];
         new_pop.best_sol=pos;
     }
@@ -332,11 +346,16 @@ void replace(population &old_pop, population &new_pop, const vector<vector<doubl
     old_pop=new_pop;  //Reemplazamos las poblaciones
 }
 
+/*  Implementa el algoritmo genético generacional usando operador de cruce uniforme.
+    Imprime por pantalla el fitness de la mejor solución de la población encontrada,
+    así como el tiempo de ejecución del algorimo en segundos, el número de poblaciones generadas
+    y el número de evaluaciones de la función fitness. 
+*/
 void UniformAGG(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
     clock_t start, total;
     int evaluations=0, size_pop=50;
     double mut_prob=0.1, cross_prob=0.7;
-    int generations=0;
+    int generations=1;
     population new_pop, old_pop;
     solution best_sol;
 
@@ -353,10 +372,7 @@ void UniformAGG(const vector<vector<double> > &matrix, const unsigned int &num_s
         evaluatePopulation(new_pop,matrix,evaluations);
         replace(old_pop,new_pop,matrix);
         generations++;
-        //cout << "Iterations: " << evaluations << " <-> Fitnes: " << old_pop.best_fitness <<endl;
     }
-
-    //best_sol=old_pop.solutions[old_pop.best_sol];
 
     total=clock()-start;
     // Imprime el resultado en el formato: Fitness, Tiempo, Generaciones, Evaluaciones

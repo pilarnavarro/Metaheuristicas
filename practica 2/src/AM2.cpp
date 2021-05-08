@@ -543,20 +543,21 @@ void IntToBin(const solution &sol, solution_bin &sol_bin, int size){
 
 
 /*  Implementa un algoritmo memético usando el algoritmo genético generacional 
-    con operador de cruce uniforme y aplicando búsqueda local a todas las soluciones de 
-    la población obtenida cada 10 generaciones. 
+    con operador de cruce uniforme y aplicando búsqueda local a las soluciones de 
+    la población obtenida cada 10 generaciones con una probabilidad de 0.1.
     Imprime por pantalla el fitness de la mejor solución de la población encontrada,
     así como el tiempo de ejecución del algorimo en segundos, el número de poblaciones generadas
-    y el número de evaluaciones de la función fitness. 
-*/
-void AM1(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
+    y el número de evaluaciones de la función fitness. */
+void AM2(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
     clock_t start, total;
     int evaluations=0, size_pop=50;
     double mut_prob=0.1, cross_prob=0.7;
     int generations=1;
+    int num_local=0.1*size_pop;
     population new_pop, old_pop;
     solution_bin best_sol;
     solution sol;
+    int rand_pos;
 
     srand(seed);    //Fijamos la semilla
 
@@ -569,11 +570,12 @@ void AM1(const vector<vector<double> > &matrix, const unsigned int &num_sel, con
         cross(new_pop,cross_prob,num_sel,matrix);
         mutation(new_pop,mut_prob,matrix);
         evaluatePopulation(new_pop,matrix,evaluations);
-        if(generations%10==0){      //Se ejecuta cada 10 generaciones
-            for(unsigned i=0;i<new_pop.solutions.size() and evaluations<100000;i++){
-                BinToInt(new_pop.solutions[i],sol);
+        if(generations%10==0){  //Se ejecuta cada 10 generaciones
+            for(unsigned i=0;i<num_local and evaluations<100000;i++){
+                rand_pos=rand()%new_pop.solutions.size();  //Posición aleatoria de una solución
+                BinToInt(new_pop.solutions[rand_pos],sol);
                 localSearch(matrix,sol,evaluations,num_sel);
-                IntToBin(sol,new_pop.solutions[i],matrix.size());
+                IntToBin(sol,new_pop.solutions[rand_pos],matrix.size());
             }
             updateBest(new_pop);
         }
@@ -587,6 +589,7 @@ void AM1(const vector<vector<double> > &matrix, const unsigned int &num_sel, con
     << ", " << generations<< ", " <<evaluations<<endl;
 }
 
+
 int main(int argc, char *argv[]){
     //Leemos el fichero de datos e inicializamos la matriz de distancias
     int num_elements, num_sel;
@@ -597,5 +600,5 @@ int main(int argc, char *argv[]){
     readInput(matrix);
 
     //Ejecutamos el algoritmo
-    AM1(matrix,num_sel,seed);
+    AM2(matrix,num_sel,seed);
 }
