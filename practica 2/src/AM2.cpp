@@ -482,7 +482,7 @@ pair<int,double> lowestContribution(const vector<int> &sol, const vector<vector<
 
 /*  Implementa el algorimto de la búsqueda local del primer mejor para el problema MDP.
     Determina el conjunto de num_sel elementos que proporciona el valor de fitness más alto*/
-void localSearch(const vector<vector<double> > &matriz, solution &sol, int &evaluations,const unsigned int &num_sel){
+void localSearch(const vector<vector<double> > &matriz, solution &sol, int &evaluations,const unsigned int &num_sel, const int &seed){
     bool mejora;
     unsigned int old_elem, new_elem;
     int num_eval=0;
@@ -496,7 +496,7 @@ void localSearch(const vector<vector<double> > &matriz, solution &sol, int &eval
     min_contrib=lowestContribution(sol.elements,matriz);
 
     mejora=true;
-    while(mejora and num_eval < 400){  //Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones
+    while(mejora and num_eval < 400 and evaluations<100000){  //Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones
         mejora = false;
         old_elem=sol.elements[min_contrib.first];  //Guardamos el elemento antiguo que vamos a intercambiar
 
@@ -574,7 +574,7 @@ void AM2(const vector<vector<double> > &matrix, const unsigned int &num_sel, con
             for(unsigned i=0;i<num_local and evaluations<100000;i++){
                 rand_pos=rand()%new_pop.solutions.size();  //Posición aleatoria de una solución
                 BinToInt(new_pop.solutions[rand_pos],sol);
-                localSearch(matrix,sol,evaluations,num_sel);
+                localSearch(matrix,sol,evaluations,num_sel,seed);
                 IntToBin(sol,new_pop.solutions[rand_pos],matrix.size());
             }
             updateBest(new_pop);

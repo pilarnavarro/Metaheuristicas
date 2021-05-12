@@ -172,6 +172,20 @@ int worstSolution(const population &pop){
     return pos;
 }
 
+//Actualiza la mejor solución de la población 'pop'
+void updateBest(population &pop){
+    double max_fitness=pop.best_fitness;
+    int pos;
+    for(unsigned i=0;i<pop.solutions.size();i++){
+        if(pop.solutions[i].fitness>max_fitness){
+            max_fitness=pop.solutions[i].fitness;
+            pos=i;
+        }
+    }
+    pop.best_fitness=max_fitness;
+    pop.best_sol=pos;
+}
+
 //--------------------------------ALGORITMO GENÉTICO-------------------------------------
 
 /*Función que implementa el torneo binario, esto es, 
@@ -209,7 +223,7 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
     //Posición aleatoria de la solución que tenga el valor 1 (true)
     do{
         pos1 = rand()%size;
-    }while(!sol.elements[pos1]);
+    }while(!sol.elements[pos1] );
 
     //Posición aleatoria de la solución que tenga el valor 0 (false)
     do{
@@ -263,19 +277,19 @@ void positionalCross(const solution &father, const solution &mother, solution &s
     son.evaluated=false;
 }
 
-/*Implementa el cruce, donde se generan dos nuevas soluciones hijas
-a partir de dos soluciones padre de la población pop, 
+/*Implementa el cruce, donde se genera una nueva solución hija
+a partir de dos soluciones padre de la población pop,
+siendo una de ellas siempre la mejor solución, 
 haciendo uso del operador de cruce basado en posición.
-Las nuevas soluciones sustituyen a los padres y cada
+La nueva solución sustituye al padre aleatorio y cada
 pareja de soluciones se cruza con probabilidad 'cross_prob'*/
 void cross(population &pop, const double &cross_prob, const int &seed){
     solution sol1,sol2;
     int num_cross=cross_prob*pop.solutions.size()/2;  //Número esperado de soluciones que cruzan
     for(unsigned i = 0; i < num_cross ; i++){
-        positionalCross(pop.solutions[2*i], pop.solutions[2*i+1], sol1,seed);  //Se cruzan soluciones consecutivas en la población
-        positionalCross(pop.solutions[2*i], pop.solutions[2*i+1], sol2,seed);
-        pop.solutions[2*i] = sol1;          //Las nuevas soluciones generadas sustituyen a los padres
-        pop.solutions[2*i+1] = sol2;
+        updateBest(pop);
+        positionalCross(pop.solutions[pop.best_sol], pop.solutions[2*i], sol1,seed); 
+        pop.solutions[2*i] = sol1;          
     }
 }
 
@@ -284,6 +298,7 @@ manteniendo la mejor solución de 'old_pop' en caso de
 ser mejor que la mejor solución de 'new_pop'*/
 void replace(population &old_pop, population &new_pop, const vector<vector<double> > &matrix){
     int pos=-1;
+
     //Si la mejor solución de la población antigua es mejor que la de la nueva,
     //la guardamos en la posición de la población nueva que contiene a la peor solución
     if(old_pop.best_fitness > new_pop.best_fitness){
@@ -325,7 +340,7 @@ void PositionalAGG(const vector<vector<double> > &matrix, const unsigned int &nu
 
     total=clock()-start;
     // Imprime el resultado en el formato: Fitness, Tiempo, Generaciones, Evaluaciones
-    cout << setprecision(2) << fixed << old_pop.best_fitness << ", " << setprecision(6)<< (double) total/CLOCKS_PER_SEC 
+    cout << setprecision(2) << fixed << old_pop.best_fitness  << ", " << setprecision(6)<< (double) total/CLOCKS_PER_SEC 
     << ", " << generations<< ", " <<evaluations<<endl;
 }
 

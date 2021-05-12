@@ -1,10 +1,11 @@
 #include <iostream>
 #include <assert.h>
 #include <vector>
-#include <algorithm>    // shuffle and find
-#include <random>       // rand and srand
+#include <algorithm>
+#include <random>
 #include <iomanip>      // setprecision
 #include <limits>       // numeric_limits<double>::infinity()
+
 
 using namespace std;
 
@@ -157,9 +158,11 @@ void randomPopulation(population &pop, const unsigned int &size_pop, const unsig
     evaluatePopulation(pop,matrix,evaluations);
 }
 
-/*Determina la posición de la solución en la población 'pop' que presenta
-el valor de fitness más bajo, o sea, la peor solución de la población*/
-int worstSolution(const population &pop){
+/*Determina las posiciones de las dos soluciones en la población 'pop' 
+que presentan los valores de fitness más bajo, o sea, 
+las dos peores soluciones de la población*/
+pair<int,int> worstSolutions(const population &pop){
+    pair<int,int> positions;
     int pos = -1;
     double min_fitness = std::numeric_limits<double>::infinity();
 
@@ -169,35 +172,55 @@ int worstSolution(const population &pop){
             min_fitness = pop.solutions[i].fitness;
         }
     }
-    return pos;
+    positions.first=pos; //Peor solución
+    
+    pos = -1;
+    min_fitness = std::numeric_limits<double>::infinity();
+
+    for(unsigned i = 0; i < pop.solutions.size(); i++){
+        if((min_fitness > pop.solutions[i].fitness) && i!=positions.first){
+            pos = i ;
+            min_fitness = pop.solutions[i].fitness;
+        }
+    }
+    positions.second=pos;  //Segunda peor solución
+    
+    return positions;
 }
 
 //--------------------------------ALGORITMO GENÉTICO-------------------------------------
 
-/*Función que implementa el torneo binario, esto es, 
-selecciona dos soluciones aleatorias de la población 'pop'
+/*Función que implementa el torneo con tamaño 3, esto es, 
+selecciona tres soluciones aleatorias de la población 'pop'
 y devuelve la posición de la que tiene un fitness mayor
-de entre las dos seleccionadas */
-int binaryCompetition(const population &pop){
+de entre las seleccionadas */
+int ternaryCompetition(const population &pop){
     int size=pop.solutions.size();
-    int rand1 = rand()%size;
-    int rand2 = rand()%size;
-    return pop.solutions[rand1].fitness > pop.solutions[rand2].fitness ? rand1 : rand2;
+    vector<int> rands;
+    double best_fitness=0, best_pos=-1;
+
+    for(unsigned i=0;i<3;i++){
+        rands.push_back(rand()%size);
+        if(pop.solutions[rands[i]].fitness>best_fitness){
+            best_fitness=pop.solutions[rands[i]].fitness;
+            best_pos=rands[i];
+        }
+    }    
+    return best_pos;
 }
 
-/*Operador de selección. 
-Selecciona una nueva población de soluciones que se almacena en 'new_pop'
-de entre las presentes en 'old_pop' usando la estrategia de torneo binario*/
-void selection(population &new_pop, const population &old_pop){
-    int pos = 0;
-    new_pop.best_fitness=0;
-    new_pop.best_sol=-1;
-    new_pop.solutions.resize(old_pop.solutions.size());
 
-    for(unsigned i = 0 ; i < old_pop.solutions.size(); i++){
-        pos = binaryCompetition(old_pop);  
-        new_pop.solutions[i]=old_pop.solutions[pos];
-    }
+/*Operador de selección. 
+Selecciona dos soluciones aleatorias que se almacenan en 's1' y 's2' respectivamente,
+de entre las presentes en la población 'pop', usando la estrategia de torneo con tamaño 3*/
+void pairSelection(const population &pop,solution &s1,solution &s2){
+    int pos1,pos2;
+
+    pos1 = ternaryCompetition(pop);  
+    pos2 = ternaryCompetition(pop);  
+
+    s1=pop.solutions[pos1];
+    s2=pop.solutions[pos2];
 }
 
 /*Intercambia los valores de dos posiciones aleatorias de la solución 
@@ -209,7 +232,7 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
     //Posición aleatoria de la solución que tenga el valor 1 (true)
     do{
         pos1 = rand()%size;
-    }while(!sol.elements[pos1]);
+    }while(!sol.elements[pos1] );
 
     //Posición aleatoria de la solución que tenga el valor 0 (false)
     do{
@@ -224,16 +247,16 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
 }
 
 /*  Operador de mutación.
-    Muta una solución aleatoria de la población 'pop',
+    Muta una solución de entre 's1' y 's2',
     con probabilidad 'mut_prob'*/
-void mutation(population &pop,const double &mut_prob,const vector<vector<double> > &matrix){
-    int pos=0;
-    int num_mut = mut_prob*pop.solutions.size();  //número esperado de soluciones que mutan
-
-    for(unsigned i=0;i<num_mut;i++){
-        pos=rand()%pop.solutions.size();  //posición aleatoria del vector de soluciones
-        mutateSolution(pop.solutions[pos],matrix);
-    }
+void pairMutation(solution &s1,solution &s2, const double &mut_prob,const vector<vector<double> > &matrix){
+    int pos;
+    //Generamos un número aleatorio en [0,1]
+    if((float) rand()/RAND_MAX < 2*mut_prob){
+        pos=rand()%2;  //0 ó 1 aleatorio
+        if(pos==0) mutateSolution(s1,matrix);
+        else  mutateSolution(s2,matrix);
+    }  
 }
 
 /*Operador de cruce basado en posición.
@@ -263,70 +286,81 @@ void positionalCross(const solution &father, const solution &mother, solution &s
     son.evaluated=false;
 }
 
-/*Implementa el cruce, donde se generan dos nuevas soluciones hijas
-a partir de dos soluciones padre de la población pop, 
-haciendo uso del operador de cruce basado en posición.
-Las nuevas soluciones sustituyen a los padres y cada
-pareja de soluciones se cruza con probabilidad 'cross_prob'*/
-void cross(population &pop, const double &cross_prob, const int &seed){
-    solution sol1,sol2;
-    int num_cross=cross_prob*pop.solutions.size()/2;  //Número esperado de soluciones que cruzan
-    for(unsigned i = 0; i < num_cross ; i++){
-        positionalCross(pop.solutions[2*i], pop.solutions[2*i+1], sol1,seed);  //Se cruzan soluciones consecutivas en la población
-        positionalCross(pop.solutions[2*i], pop.solutions[2*i+1], sol2,seed);
-        pop.solutions[2*i] = sol1;          //Las nuevas soluciones generadas sustituyen a los padres
-        pop.solutions[2*i+1] = sol2;
-    }
+/*Implementa el cruce, donde se generan dos nuevas soluciones hijas,
+'s1' y 's2', a partir de dos soluciones padre, 'p1' y 'p2', 
+haciendo uso del operador de cruce basado en posición.*/
+void pairCross(const solution &p1, const solution &p2, solution &s1, solution &s2 , const int &seed){
+    positionalCross(p1, p2, s1,seed);
+    positionalCross(p1, p2, s2,seed);
 }
 
-/*Se reemplaza la población 'old_pop' por 'new_pop',
-manteniendo la mejor solución de 'old_pop' en caso de 
-ser mejor que la mejor solución de 'new_pop'*/
-void replace(population &old_pop, population &new_pop, const vector<vector<double> > &matrix){
-    int pos=-1;
-    //Si la mejor solución de la población antigua es mejor que la de la nueva,
-    //la guardamos en la posición de la población nueva que contiene a la peor solución
-    if(old_pop.best_fitness > new_pop.best_fitness){
-        new_pop.best_fitness = old_pop.best_fitness;
-        pos= worstSolution(new_pop); 
-        new_pop.solutions[pos]=old_pop.solutions[old_pop.best_sol];
-        new_pop.best_sol=pos;
-    }
 
-    old_pop=new_pop;  //Reemplazamos las poblaciones
-}
-
-/*  Implementa el algoritmo genético generacional usando operador de cruce basado en posición.
-    Imprime por pantalla el fitness de la mejor solución de la población encontrada,
-    así como el tiempo de ejecución del algorimo en segundos, el número de poblaciones generadas
-    y el número de evaluaciones de la función fitness. 
+/* Se introducen las soluciones 's1' y 's2' en las posiciones
+de la población 'pop' que tienen las dos peores soluciones de la misma,
+en caso de que sean mejores que estas.
 */
-void PositionalAGG(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
+void replace(population &pop, const solution &s1, const solution &s2){
+    pair<int,int> worst_pos=worstSolutions(pop);  //Determinamos las posiciones de las dos peores soluciones de la población
+    solution worst_sol, best_sol;
+
+    if(s1.fitness<s2.fitness){  //Vemos qué solución tiene mejor fitness y cúal peor de entre s1 y s2
+        worst_sol=s1;
+        best_sol=s2;
+    }else{
+        worst_sol=s2;
+        best_sol=s1;
+    } 
+
+    //Si las soluciones s1 y s2 son mejores que las peores de la población 'pop', las intercambiamos
+    if(pop.solutions[worst_pos.first].fitness<worst_sol.fitness && pop.solutions[worst_pos.second].fitness<best_sol.fitness){
+            pop.solutions[worst_pos.first]=worst_sol;
+            pop.solutions[worst_pos.second]=best_sol;
+            if(best_sol.fitness>pop.best_fitness){  //Si el fitness de la mejor solución introducida supera al mejor fitness de la poblacion,
+                pop.best_fitness=best_sol.fitness;   //actualizamos la mejor solución de la población
+                pop.best_sol=worst_pos.second;
+            }
+    }else if(pop.solutions[worst_pos.first].fitness<best_sol.fitness){  //La mejor solución es mejor que la peor de la población 'pop'
+            pop.solutions[worst_pos.first]=best_sol;
+            if(best_sol.fitness>pop.best_fitness){   //actualizamos la mejor solución de la población
+                pop.best_fitness=best_sol.fitness;
+                pop.best_sol=worst_pos.first;
+            }
+    }
+}
+
+
+/*  Implementa el algoritmo genético estacionario usando operador de cruce basado en posición.
+    Imprime por pantalla el fitness de la mejor solución de la población encontrada,
+    así como el tiempo de ejecución del algorimo en segundos. */
+void PositionalAGE(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
     clock_t start, total;
     int evaluations=0, size_pop=50;
-    double mut_prob=0.1, cross_prob=0.7;
-    int generations=1;
-    population new_pop, old_pop;
-    solution best_sol;
+    double mut_prob=0.1;  //Probabilidad de mutación por cromosoma
+    population pop;
+    solution p1,p2,s1,s2;
 
     srand(seed);    //Fijamos la semilla
 
     start=clock();
 
-    randomPopulation(old_pop,size_pop,num_sel,matrix,evaluations); //Empezamos con una población aleatoria
+    randomPopulation(pop,size_pop,num_sel,matrix,evaluations); //Empezamos con una población aleatoria
+
     while(evaluations<100000){
-        selection(new_pop,old_pop);
-        cross(new_pop,cross_prob,seed);
-        mutation(new_pop,mut_prob,matrix);
-        evaluatePopulation(new_pop,matrix,evaluations);
-        replace(old_pop,new_pop,matrix);
-        generations++;
+        pairSelection(pop,p1,p2);
+        pairCross(p1,p2,s1,s2,seed);
+        pairMutation(s1,s2,mut_prob,matrix);
+        s1.fitness=fitness(s1.elements,matrix);
+        s1.evaluated=true;
+        s2.fitness=fitness(s2.elements,matrix);
+        s2.evaluated=true;
+        evaluations+=2;
+        replace(pop,s1,s2);
     }
 
+
     total=clock()-start;
-    // Imprime el resultado en el formato: Fitness, Tiempo, Generaciones, Evaluaciones
-    cout << setprecision(2) << fixed << old_pop.best_fitness << ", " << setprecision(6)<< (double) total/CLOCKS_PER_SEC 
-    << ", " << generations<< ", " <<evaluations<<endl;
+    // Imprime el resultado en el formato: Fitness, Tiempo
+    cout << setprecision(2) << fixed << pop.best_fitness  << ", " << setprecision(6)<< (double) total/CLOCKS_PER_SEC <<endl;
 }
 
 int main(int argc, char *argv[]){
@@ -339,5 +373,5 @@ int main(int argc, char *argv[]){
     readInput(matrix);
 
     //Ejecutamos el algoritmo
-    PositionalAGG(matrix,num_sel,seed);
+    PositionalAGE(matrix,num_sel,seed);
 }

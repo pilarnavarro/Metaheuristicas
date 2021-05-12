@@ -174,20 +174,28 @@ int worstSolution(const population &pop){
 
 //--------------------------------ALGORITMO GENÉTICO-------------------------------------
 
-/*Función que implementa el torneo binario, esto es, 
-selecciona dos soluciones aleatorias de la población 'pop'
+/*Función que implementa el torneo con tamaño 3, esto es, 
+selecciona tres soluciones aleatorias de la población 'pop'
 y devuelve la posición de la que tiene un fitness mayor
-de entre las dos seleccionadas */
-int binaryCompetition(const population &pop){
+de entre las seleccionadas */
+int ternaryCompetition(const population &pop){
     int size=pop.solutions.size();
-    int rand1 = rand()%size;
-    int rand2 = rand()%size;
-    return pop.solutions[rand1].fitness > pop.solutions[rand2].fitness ? rand1 : rand2;
+    vector<int> rands;
+    double best_fitness=0, best_pos=-1;
+
+    for(unsigned i=0;i<3;i++){
+        rands.push_back(rand()%size);
+        if(pop.solutions[rands[i]].fitness>best_fitness){
+            best_fitness=pop.solutions[rands[i]].fitness;
+            best_pos=rands[i];
+        }
+    }    
+    return best_pos;
 }
 
 /*Operador de selección. 
 Selecciona una nueva población de soluciones que se almacena en 'new_pop'
-de entre las presentes en 'old_pop' usando la estrategia de torneo binario*/
+de entre las presentes en 'old_pop' usando la estrategia de torneo con tamaño 3*/
 void selection(population &new_pop, const population &old_pop){
     int pos = 0;
     new_pop.best_fitness=0;
@@ -195,7 +203,7 @@ void selection(population &new_pop, const population &old_pop){
     new_pop.solutions.resize(old_pop.solutions.size());
 
     for(unsigned i = 0 ; i < old_pop.solutions.size(); i++){
-        pos = binaryCompetition(old_pop);  
+        pos = ternaryCompetition(old_pop);  
         new_pop.solutions[i]=old_pop.solutions[pos];
     }
 }
@@ -209,7 +217,7 @@ void mutateSolution(solution &sol, const vector<vector<double> > &matrix) {
     //Posición aleatoria de la solución que tenga el valor 1 (true)
     do{
         pos1 = rand()%size;
-    }while(!sol.elements[pos1]);
+    }while(!sol.elements[pos1] );
 
     //Posición aleatoria de la solución que tenga el valor 0 (false)
     do{
@@ -284,6 +292,7 @@ manteniendo la mejor solución de 'old_pop' en caso de
 ser mejor que la mejor solución de 'new_pop'*/
 void replace(population &old_pop, population &new_pop, const vector<vector<double> > &matrix){
     int pos=-1;
+    
     //Si la mejor solución de la población antigua es mejor que la de la nueva,
     //la guardamos en la posición de la población nueva que contiene a la peor solución
     if(old_pop.best_fitness > new_pop.best_fitness){

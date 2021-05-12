@@ -1,0 +1,2047 @@
+\documentclass[10pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[spanish, es-tabla]{babel}
+\usepackage{caption}
+\usepackage{listings}
+\usepackage{adjustbox}
+\usepackage{enumitem}
+\usepackage{boldline}
+\usepackage{amssymb, amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+%\usepackage{soul}
+\usepackage{enumerate}
+\usepackage{hyperref}
+\usepackage{graphics, graphicx, float}
+
+% Meta
+\title{\textbf{\huge Metaheurísticas: Práctica 2 }
+	\\\medskip \Large Técnicas de Búsqueda basadas en Poblaciones\\ para el Problema de la Máxima Diversidad \\\medskip}
+\author{Pilar Navarro Ramírez - 76592479H \\ pilarnavarro@correo.ugr.es \\ Grupo 2: Viernes de 17:30 a 19:30}
+\date{ \today }
+
+% Custom
+\providecommand{\abs}[1]{\lvert#1\rvert}
+\setlength\parindent{0pt}
+\definecolor{Light}{gray}{.90}
+\newcommand\ddfrac[2]{\frac{\displaystyle #1}{\displaystyle #2}}
+\setlength{\parindent}{1.5em} %sangria
+\setlength{\parskip}{3mm}
+
+% Displaying code with lstlisting
+\lstset { %
+	language=C++,
+	backgroundcolor=\color{black!5}, % set backgroundcolor
+	basicstyle=\small,% basic font setting
+}
+
+\usepackage[ruled]{algorithm2e}
+
+
+\begin{document}	
+	
+	\maketitle 
+	\newpage
+	\tableofcontents
+	\newpage
+	
+	
+	\section{Descripción del problema}
+	
+	
+	El \textbf{Problema de la Máxima Diversidad (Maximum Diversity Problem, MDP)}, es un problema NP-completo de optimización combinatoria. 
+	Consiste en seleccionar un subconjunto de $m$ elementos de un conjunto inicial de $n$ elementos (con $n>m$) de forma que se maximice la diversidad entre los elementos escogidos.
+	
+	Además de esto, se dispone de una matriz $D=(d_{ij})$ de dimensión $n\times n$ que contiene las distancias entre todos los $ n $ elementos. Así, en la posición $(i,j)$ de la matriz, se encuentra la distandia entre el elemento i-ésimo y el j-ésimo ($\forall i,j=1,...,n$), siendo $d_{ii}=0\hspace{1mm}\forall i=1,...,n$. Por lo tanto, se trata de una matriz simétrica cuya diagonal está formada por ceros. 
+	
+	Existen varias formas de calcular la diversidad, pero la que nosotros usaremos consiste en calcular la suma de las distancias entre cada par de elementos de los $m$ seleccionados. 
+	
+	 El problema MDP se puede formular matemáticamente como sigue:
+	
+	$$ \text{Maximizar } z_{MS}(x) = \sum_{i=1}^{n-1} \sum_{j=i+1}^{n} d_{ij} x_i x_j $$
+	$$ \text{Sujeto a } \sum_{i=1}^{n} x_i = m $$
+	$$ x_i \in \{0,1\}, \forall i \in \{1,\dotsc,n\} $$
+	
+	donde $x$ es una solución al problema, esto es, es un vector binario de longitud $n$ que indica los $m$ elementos seleccionados, donde la posición i-ésima es 1 si se ha seleccionado el elemento i-ésimo.
+	
+	\newpage
+
+	
+	\section{Descripción de la aplicación de los algoritmos}
+	
+	Describimos aquí las consideraciones comunes a los distintos algoritmos.
+	
+	Todos los algoritmos parten de una matriz de distancias $D$ de tamaño $n\times n$, como ya hemos comentado (que nosotros llamaremos simplemente \textit{matrix} en nuestras implementaciones). Dicha matriz es construida leyendo las distancias de los ficheros de datos que se nos proporcionan en cada caso (de lo cual se encarga la función \lstinline|readInput|). Se considera como entrada además el número de elementos a seleccionar $m$, también indicado en cada fichero. 
+	\subsection{Práctica 1}
+	
+	\subsubsection{Representación de la soluciones}
+	
+	Una solución vendrá dada como un contenedor de enteros que contiene los $m$ elementos seleccionados, en vez de un vector binario como se indica en la descripción del problema. Esta última representación es menos eficiente, pues hay que tener en cuenta $n$ elementos con sus distancias en vez de $m$ a la hora de calcular la bondad de la solución (\textit{fitness}), así como en cualquier otra operación que involucre recorrer la solución completa.
+	
+	En el caso del \underline{algoritmo Greedy} una solución será un conjunto (set) de enteros correspondientes a los elementos elegidos, que pueden tomar los valores de entre $1$ y $n$, sin aparecer ninguno de ellos repetido. El tamaño de este conjunto será de $m$. Se usa aquí esta estructura de datos por ser el número de operaciones de consulta en la implementación del algoritmo muy pequeño en comparación con el número de operaciones de inserción y borrado, como veremos en la siguiente sección. 
+	
+	 Para el algoritmo de la \underline{búsqueda local}, tomamos un vector de enteros en lugar de un conjunto (por realizarse un mayor número de operaciones de consulta en este algoritmo que en greedy) cumpliendo exactamente las mismas condiciones que el conjunto (elementos no repetidos, tamaño $m$, enteros con valores entre $1$ y $n$),  junto con el valor de fitness asociado a la solución. Concretamente, consideramos la siguiente estructura:
+
+	\begin{lstlisting}
+	struct solution {
+		vector<int> elements;
+		double fitness;
+	};
+	\end{lstlisting}
+	
+	para la cual se ha sobrecargado el operador de asignación, de manera que al asignar una solución a otra lo que se hace es llamar al operador de asignación de cada una de las componentes del \lstinline|struct|.
+	
+	Aunque en un vector y en un conjunto los elementos aparecen ordenados, cabe mencionar que nosotros no tendremos en cuenta este orden, es decir, dos conjuntos o vectores con los mismos enteros pero en distinto orden son considerados la misma solución. 
+	
+	\subsubsection{Contribución de un elemento}
+	
+	Definimos para ambos algoritmos una función \textbf{contribution}, que calcula la contribución de un determinado elemento al coste de la solución que se le pasa como parámetro. Esto es, suma las distancias de ese elemento a cada uno de los elementos que se encuentran en la solución indicada, la cual puede ser \underline{un conjunto o un vector de enteros}, como ya hemos comentado. 
+	
+	El elemento para el cual se quiere calcular la contribución puede formar parte o no del conjunto solución. En caso de que el elemento se encuentre en dicho conjunto determina la contribución de ese elemento a la solución. Si no forma parte, esta función permite saber cómo contribuiría el elemento en caso de estar incluido en la misma. 
+	
+	El pseudocódigo de esta función es el siguiente:
+		\begin{algorithm}
+		\caption{\sc contribution}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias, entero \textit{element}}
+		\KwOut{contribucion del entero \textit{element} en \textit{conjunto} }
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ i$ \textbf{in} $conjunto $ }{
+				sum $\leftarrow$ sum + matriz[ element, i ]
+			}
+			\Return sum
+		}
+	\end{algorithm}
+
+
+\subsubsection{Función objetivo}
+	
+	Como ya explicamos en el punto anterior, la función objetivo a maximizar en este problema es 
+	$$ z_{MS}(x) = \sum_{i=1}^{m-1} \sum_{j=i+1}^{m} d_{ij} $$ que está definida en la función \lstinline|fitness|, cuyo pesudocódigo es el siguiente:
+		
+	\begin{algorithm}[H]
+	\caption{\sc fitness}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias}
+		\KwOut{valor de la función objetivo para la solución dada en \textit{conjunto}}
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ it_1=conjunto.begin $ \textbf{to} $conjunto.end$ }{
+				\For {$it_2 = it_1$ \textbf{to} $conjunto.end$}{   
+					sum $\leftarrow$ sum + matriz[conjunto($it_1$), conjunto($it_2$)]
+				}
+			}
+			\Return sum
+		}
+	\end{algorithm}
+
+	Así, esta función permite evaluar la solución dada en \textit{conjunto}, de manera que cuanto mayor sea el valor devuelto por esta función mejor será la solución. Como para la función \lstinline|contribution|, el parámetro \textit{conjunto} que contiene los enteros que determinan una solución, puede ser un conjunto/set o un vector, según si se usa en el algoritmo greedy o en el de la búsqueda local. 
+	
+	\subsection{Práctica 2}
+	\subsubsection{Representación de las soluciones}
+	Para esta práctica se considera una nueva representación de las soluciones, basada en un vector binario con tantas posiciones como elementos hay en el problema ($ n $). En concreto, tendremos un vector de booleanos, donde la posición i-ésima de dicho vector será \textit{true} (equivalentemente 1) si el elemento i-ésimo forma parte de la solución y \textit{false} (ó 0) si no forma parte de la misma. Asociado a este vector tendremos dos parámetros adicionales: el \textit{fitness} de la solución determinada por el vector y un booleano que servirá para indicar si la solución ha sido o no evaluada (se ha calculado su fitness), de manera que se evite evaluar varias veces la misma solución. Así, la estructura de la solución será la siguiente:
+	
+	\begin{lstlisting}
+	struct solution {
+		vector<bool> elements;
+		double fitness;
+		bool evaluated;
+	};
+	\end{lstlisting}
+	
+	Por otra parte, se representa una población como un vector de soluciones, con un tamaño igual al de la población, esto es, el número de soluciones que tiene esa población. Junto al vector de soluciones se guarda también el fitness de la mejor solución de la población y la posición en el vector de la misma:
+	
+		\begin{lstlisting}
+	struct population {
+		vector<solution> solutions;
+		double best_fitness;	//Fitness de la mejor solucion
+		int best_sol;		//Posicion de la mejor solucion
+	};
+	\end{lstlisting}
+	
+	Para ambas estructuras sobrecargamos el operador de asignación, como en la práctica anterior. 
+	
+	Cabe destacar que la representación de las soluciones de la BL y esta nueva representación tienen el mismo nombre (\lstinline|solution|), pero se usan en algoritmos diferentes, por lo que esto no supone ningún problema. Para los algoritmos meméticos, en cambio, sí se usan las dos representaciones a la vez, por lo que en este caso notaremos a la estructura de la solución binaria como \lstinline|solution_bin|.
+	
+	\subsubsection{Contribución de un elemento}
+	Debido a esta nueva representación de las soluciones, la función que determina la contribución de un elemento a una solución varía ligeramente de la usada en la práctica anterior. En este caso, se suma la distancia del elemento considerado a otro elemento de la solución sólo si el valor de la posición correspondiente a ese elemento en el vector de booleanos es \textit{true}:
+	
+	\begin{algorithm}[H]
+		\caption{\sc contribution}
+		\KwIn{vector de booleanos \textit{sol}, \textit{matrix} de distancias, entero \textit{element}}
+		\KwOut{contribucion del entero \textit{element} a la solución dada en \textit{sol} }
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ i$ \textbf{in} $ [0,sol.size)  $}{
+				\If{sol[i]}{sum $\leftarrow$ sum + matrix[ element, i ]}	
+			}
+			\Return sum
+		}
+	\end{algorithm}
+		
+	\subsubsection{Función objetivo}
+	
+	La función objetivo también se ve modificada parcialmente, de forma que queda como sigue:
+	
+	\begin{algorithm}[H]
+		\caption{\sc fitness}
+		\KwIn{vector de booleanos \textit{sol}, \textit{matrix} de distancias}
+		\KwOut{valor de la función objetivo para la solución dada en \textit{sol}}
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ i $ \textbf{in} $ [0,sol.size)  $ }{
+				\For {$j=i+1$ \textbf{to} $sol.size$}{  
+					\If{sol[i] \textbf{and} sol[j]}{sum $\leftarrow$ sum + matrix[i,j]} 					
+				}
+			}
+			\Return sum
+		}
+	\end{algorithm}
+	Así, se suma la distancia entre dos elementos sólo si estos forman parte de la solución, es decir, si sus respectivos valores son \textit{true} en el vector \textit{sol}.
+	
+	\subsubsection{Evaluación de una población}
+	Con el objetivo de evaluar una población de soluciones implementamos la función \lstinline|evaluatePopulation|, que se encarga de calcular el fitness de todas las soluciones de la población que aún no han sido evaluadas y determinar la posición y el fitness de la mejor solución contenida en la población:
+	
+		\begin{algorithm}[H]
+		\caption{\sc evaluatePopulation}
+		\KwIn{población \textit{pop} a ser evaluda, \textit{matrix} de distancias,\\ número de evaluaciones \textit{evaluations}}
+		\KwOut{población \textit{pop} evaluada}
+		\Begin{
+			$ best\_pos $ $ \leftarrow $ $ pop.best\_sol $ \\
+			$ best\_fit $ $ \leftarrow $ $ pop.best\_fitness $
+			
+			\For { $ sol $ \textbf{in} $ pop.solutions $ }{
+				\If{sol \textbf{is not} evaluated}{
+				evaluations ++\\
+				sol.fitness $ \leftarrow $ $\operatorname{fitness}(sol, matrix)$\\
+				sol.evaluated $\leftarrow$ true \\
+				\If{$ best\_fit $ $ < $ sol.fitness}
+				{$ best\_fit $ $\leftarrow$ sol.fitness \\
+				$ best\_pos $ $\leftarrow$ $ index\_of(sol) $}
+				}					
+				}
+			
+			$ pop.best\_fitness $ $\leftarrow$ $ best\_fit $ \\
+			$ pop.best\_sol $ $\leftarrow$ $ best\_pos $ \\
+			\Return pop
+		}
+	\end{algorithm}
+	
+	Notamos que tras cada llamada a la función \textit{fitness} para una solución, se aumenta el número de evaluaciones de dicha función (\textit{evaluations})
+	
+	\subsubsection{Generación de una población aleatoria}
+	En todos los algoritmos genéticos se parte de una población generada aleatoriamente. Para generar las soluciones aleatorias usamos la función \lstinline|randomSolution|:
+	
+	\begin{algorithm}[H]
+		\DontPrintSemicolon
+		\caption{\sc randomSolution}
+		\KwIn{tamaño de la solución $m$, \textit{matrix} de distancias}
+		\KwOut{solución válida del problema MDP}
+		\Begin{
+			$sol \leftarrow [0,0,...^{n)},0]$\tcp*{Partimos de una solución con todos los elementos\\  sin seleccionar} 
+			chosen $\leftarrow$ 0 \tcp*{Los elementos elegidos son 0}
+			\While{ $chosen < m$  }{
+				rand $\leftarrow$  elemento aleatorio de $\{0,...,n-1\}$ \\
+				\If{$!$sol[rand]}{    
+					$sol[rand] \leftarrow$ true \tcp*{ Si la posición aleatoria considerada\\ no está elegida, se añade a la solución} 
+					chosen++
+				}	
+			}
+			sol.evaluated $\leftarrow$ false\\
+			\Return sol
+		}
+	\end{algorithm}
+
+La función \lstinline|randomPopulation| se encarga de generar la población inicial aleatoriamente haciendo uso de la función anterior como se muestra a continuación:
+
+	\begin{algorithm}[H]
+	\caption{\sc randomPopulation}
+	\KwIn{tamaño de la población $ size\_pop $, tamaño de una solución $m$, \textit{matrix} de distancias,\\ número de evaluaciones de la función objetivo $ evaluations $}
+	\KwOut{población de soluciones válidas del problema MDP correctamente evaluada}
+	\Begin{
+		\For{i \textbf{in} $[0,size\_pop)$}{
+			sol $\leftarrow$ $\operatorname{randomSolution}(m,matrix)$\\
+			pop.solutions $\leftarrow$ pop.solutions $\cup$ $ \{sol\} $
+		}
+		$ pop.best\_sol $ $\leftarrow$ -1\\
+		$ pop.best\_fitness $ $\leftarrow$ 0\\
+		$\operatorname{evaluatePopulation}(pop,matrix,evaluations)$\\
+		\Return pop
+	}
+\end{algorithm}
+
+\subsubsection{Operadores comunes de los algoritmos genéticos}
+
+Describimos a continuación cada uno de los operadores que tienen en común los algoritmos genéticos implementados. 
+
+En todos los casos se sigue la estrategia de selección por torneo, en concreto por torneo binario, en el que se escogen dos soluciones aleatorias de la población con reemplazamiento y se selecciona (para el posterior cruce) aquella que tiene un valor de fitness mayor de entre las dos elegidas. El pseudo-código de la función que lleva a cabo este proceso es el siguiente:
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc BinaryCompetition} }
+	\KwIn{Población \textit{pop}}
+	\KwOut{Posición en la población de la solución con mayor fitness de entre dos elegidas aleatoriamente}
+	\Begin{
+	$rand1\gets$ elemento aleatorio de $\{0,...,size\_pop-1\}$  \\
+	$rand2\gets$ elemento aleatorio de $\{0,...,size\_pop-1\}$  \\
+	\uIf{$pop.solutions[rand1].fitness > pop.solutions[rand2].fitness$}{
+		\Return{$rand1$}
+	}
+	\Else{
+		\Return{$rand2$}
+	}
+	}
+\end{algorithm}
+
+El proceso de selección depende en cada caso del algoritmo concreto, generacional o estacionario.
+
+Para la mutación, hacemos uso en todos los algoritmos de la función \lstinline|mutateSolution|, que elige dos posiciones aleatorias distintas de la solución que se le pasa como parámetro, una con el valor 1 y otra con el valor 0,  e intercambia  sus valores, de manera que se obtiene otra solución válida. 
+
+\begin{algorithm}
+	\caption{ \sc mutateSolution}
+	\KwIn{solución $sol$, $matrix$ de distancias}
+	\KwOut{solución modificada tras mutar dos posiciones}
+	\Begin{
+		 \textbf{do} \\
+	 		\tcp{Posición aleatoria de la solución que tenga el valor 1 (true)}
+			pos1 $\leftarrow$ elemento aleatorio de $\{0,...,size\_pop-1\}$ \\
+		\textbf{while}	$!sol.elements[pos1] $\\
+			
+		\textbf{do} \\  
+			\tcp{Posición aleatoria de la solución que tenga el valor 0 (false)}
+			pos2 $\leftarrow$ elemento aleatorio de $\{0,...,size\_pop-1\}$  \\
+		\textbf{while} $sol.elements[pos2]$\\
+		$ sol.elements[pos1] $ $\leftarrow$ false \\
+		$ sol.elements[pos2] $ $\leftarrow$ true \\
+		sol.evaluated $\leftarrow$ false 
+	}
+\end{algorithm}
+
+Veamos ahora los distintos operadores de cruce usados en los algoritmos genéticos, que han sido dos: operador de \underline{cruce basado en posición} y operador de \underline{cruce uniforme}. 
+
+El primero de ellos genera una nueva solución factible a partir de otras dos soluciones padre, la cual comparte con los padres los valores de las posiciones que tienen el mismo valor en ambos padres. El resto de las posiciones del hijo toman un valor aleatorio de los valores restantes de uno de los padres (que serán los mismos en los dos padres por ser soluciones factibles). El pseudocódigo de este operadror es el siguiente:
+\\
+\begin{algorithm}[H]
+	\caption{ \sc positionalCross}
+	\KwIn{solución \textit{father}, solución \textit{mother}}
+	\KwOut{nueva solución $son$ }
+	\Begin{
+		\tcp{Posiciones con valores no comunes en father y mother}
+		$to\_shuffle, to\_change \leftarrow \emptyset$ 
+		
+		\tcp{Determinamos las posiciones que tienen valores iguales en father y mother\\ y las que no}
+		\ForEach{ $ i \in \{0,...,mother.size()-1\}$ }{
+			\uIf { father[i] = mother[i] } { 
+				son[i] $\leftarrow$ mother[i] \\
+			} \Else {
+					$to\_shuffle \leftarrow to\_shuffle\cup\{i\} $  \\
+					$ to\_change \leftarrow to\_change\cup\{i\} $  
+			} 
+		}
+	
+	\tcp{Barajamos las posiciones que no tienen valores comunes}
+		to\_shuffle $\leftarrow$ randomShuffle( to\_shuffle ) \\
+		
+		\tcp{En las posiciones que no tienen valor aún, se introduce\\ un valor aleatorio de los restantes de un padre}
+		\ForEach{ $ j \in  \{0,...,to\_change.size()-1\}$ }{
+			son[to\_change[j]] $\leftarrow$ mother[to\_shuffle[j]] \\
+		}
+		son.evaluated $\leftarrow$ false\\
+		\Return son
+	}
+\end{algorithm}
+
+El operador de cruce uniforme, como el anterior, conserva en el hijo los valores de las posiciones que presentan el mismo valor en ambos padres. Sin embargo, en este caso las posiciones restantes del hijo se rellenan con un valor aleatorio (0 ó 1), de manera que la solución resultante puede no ser factible. Así, es necesario aplicar un operador de reparación sobre el hijo, que determina el número de elementos seleccionados (número de posiciones que tienen el valor true) y, en caso de que sea diferente a $ m $ (número de elementos seleccionados que debe haber en una solución), añade (si faltan elementos) o elimina (si sobran) el elemento que más contribuye a la solución (en caso de que forme parte de ella) o que más contribuiría si formara parte de la misma, respectivamente, hasta que el tamaño de la solución sea el adecuado (m). 
+\\
+\begin{algorithm}[H]
+	\caption{ \sc repair}
+	\KwIn{solución \textit{sol}, tamaño de una solución $ m $, \textit{matrix} de distancias}
+	\KwOut{solución $sol$ reparada }
+	\Begin{
+		selected $\leftarrow$ nº de posiciones con valor true en \textit{sol}
+		
+		\While{$ selected>m $}{
+			$max\_pos \leftarrow$ posición de $ sol $ con valor $ true $ de mayor contribución\\
+			sol[max\_pos]$\leftarrow$ false\\
+			selected - -
+		}
+		
+		\While{$ selected<m $}{
+			$max\_pos \leftarrow$ posición de $ sol $ con valor $ false $ que más contribuiría a la solución\\
+			sol[max\_pos]$\leftarrow$ true\\
+			selected ++
+		}
+		\Return sol
+	}
+\end{algorithm}
+
+\begin{algorithm}[H]
+	\caption{ \sc UniformCross}
+	\KwIn{solución \textit{father}, solución \textit{mother}, tamaño de una solución $ m $, \textit{matrix} de distancias}
+	\KwOut{nueva solución $son$ }
+	\Begin{
+		\tcp{Posiciones con valores no comunes en father y mother}
+		$to\_change \leftarrow \emptyset$ 
+		
+		\tcp{Determinamos las posiciones que tienen valores iguales en father y mother\\ y las que no}
+		\ForEach{ $ i \in \{0,...,mother.size()-1\}$ }{
+			\uIf { father[i] = mother[i] } { 
+				son[i] $\leftarrow$ mother[i] \\
+			} \Else {
+				$ to\_change \leftarrow to\_change\cup\{i\} $  
+			} 
+		}
+		
+		\tcp{En las posiciones que no tienen valor aún,\\ se introduce un valor aleatorio}
+		\ForEach{ $ j \in  \{0,...,to\_change.size()-1\}$ }{
+			son[to\_change[j]] $\leftarrow$  valor aleatorio 0 ó 1\\
+		}
+		$\operatorname{repair}(son, m, matrix)$\\
+		son.evaluated $\leftarrow$ false\\
+		\Return son
+	}
+\end{algorithm}
+
+	
+	\section{Descripción de los algoritmos}
+	
+	Pasamos ya a explicar los algoritmos implementados. 
+		
+	\subsection{Algoritmo Greedy}
+	
+	Para este algoritmo consideramos dos conjuntos de elementos (enteros): el conjunto de los elementos que han sido seleccionados para formar parte de la solución, $Sel$, y el conjunto de elementos que no han sido seleccionados, $NoSel$. 
+	
+	El algoritmo empieza con el conjunto $Sel$ vacío y añade a él en primer lugar el elemento más alejado al resto, esto es, aquel cuya suma de las distancias a todos los demás elementos es la mayor. Para determinar este elemento, nosotros hemos implementado la función \lstinline|furthestElement|. Lo que hace es llamar a la función \lstinline|contribution| (descrita en el apartado anterior) para cada uno de los elementos del problema y con un conjunto que contiene a todos los elementos, es decir, calcula la contribución de cada uno de los elementos a dicho conjunto total, y devuelve el elemento cuya contibución es la mayor. 
+
+	\begin{algorithm}[H]
+		\caption{\sc furthestElement}
+		\KwIn{\textit{matriz} de distancias}
+		\KwOut{elemento más alejado del resto, el de mayor contribución}
+		\Begin{
+			$NoSel$ $\leftarrow$ $\{0,1,...,n-1\}$     \tcp*{Inicializo el conjunto de no\\ seleccionados a los $ n $ elementos del problema} 
+			furthest $\leftarrow$ -1 \\
+			$max\_sum\_dist$ $\leftarrow$ -1 \\
+
+			\For {  i \textbf{in} $NoSel$ }{
+				contrib $\leftarrow$ contribution ($NoSel$, matriz,  i ) \\
+				\If{contrib $>$ $max\_sum\_dist$}{
+					$max\_sum\_dist$ $\leftarrow$ contrib \\
+					furthest $\leftarrow$ i
+				}
+			} 
+			\Return furthest
+		}
+	\end{algorithm}
+	
+	Una vez añadido a $Sel$ el elemento más alejado a todos los demás, el algoritmo continúa introduciendo en cada iteración el elemento no seleccionado que está más alejado al conjunto de elementos seleccionados, hasta alcanzar el tamaño máximo que puede tener la solución, $m$. Definimos la distancia de un elemento a un conjunto como el mínimo de las distancias de ese elemento a los elementos del conjunto:
+	$$ Dist(e,Sel)=\min_{s \in Sel} d(s,e) $$
+	La función \lstinline|distanceToSet| se encarga de calcular esta distancia:
+	
+		\begin{algorithm}[H]
+		\caption{\sc distanceToSet}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias, entero \textit{element}}
+		\KwOut{distancia de \textit{element} a \textit{conjunto}}
+		\Begin{
+			
+			$min\_dist$ $\leftarrow$ $\infty$ \\
+			
+			\For {  i \textbf{in} $conjunto$ }{
+				dist $\leftarrow$ matriz[element,i] \\
+				\If{dist $<$ 	$min\_dist$}{
+					$min\_dist$ $\leftarrow$ dist \\
+				}
+			} 
+			\Return $min\_dist$
+		}
+		\end{algorithm}
+	 
+	 Para determinar en cada iteración del algoritmo cuál es el elemento no seleccionado más alejado de $Sel$, en el sentido de que maximiza la distancia a dicho conjunto, hacemos uso de la función \lstinline|furthestToSel|, cuyo pseudocódigo se muestra a continuación:
+ 
+\begin{algorithm}[H]
+	\caption{\sc furthestToSel}
+	\KwIn{conjunto de enteros seleccionados $Sel$}
+	\KwIn{conjunto de enteros no seleccionados $NoSel$}
+	\KwIn{\textit{matriz} de distancias}
+	\KwOut{elemento de $NoSel$ más alejado de $Sel$}
+	\Begin{
+
+		furthest $\leftarrow$ -1 \\
+		$max\_dist$ $\leftarrow$ -1 \\
+		
+		\For {  i \textbf{in} $NoSel$ }{
+			dist $\leftarrow$ $\operatorname{distanceToSet}(Sel, matriz,  i )$ \\
+			\If{dist $>$ $max\_dist$}{
+				$max\_dist$ $\leftarrow$ dist \\
+				furthest $\leftarrow$ i
+			}
+		} 
+		\Return furthest
+	}
+\end{algorithm}
+
+	Podemos ya ver el pseudo-código del algoritmo Greedy completo, donde se hace uso de las funciones anteriores en el sentido que hemos ido explicando:
+	
+
+	\begin{algorithm}[H]
+		\caption{\sc greedy}
+		\KwIn{ \textit{matriz} de distancias, tamaño de la solución $m$  }
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$NoSel$ $\leftarrow  \{0,1,\dotsc, n-1\}$ \\
+			$Sel \leftarrow \emptyset$ \\
+			furthest $\leftarrow$ $\operatorname{furthestElement}(matriz)$ \\
+			$Sel$ $\leftarrow$ $Sel \cup \{furthest\}$ \\
+			$NoSel$ $\leftarrow$ $NoSel \backslash \{furthest\}$ \\
+			\While{ $|Sel| < m$ }{
+				furthest $\leftarrow$ $\operatorname{furthestToSel}(Sel, NoSel, matriz)$ \\
+				$Sel$ $\leftarrow$ $Sel \cup \{furthest\}$ \\
+				$NoSel$ $\leftarrow$ $NoSel \backslash \{furthest\}$ \\
+			}
+		
+			\Return Sel, $\operatorname{fitness}(Sel, matriz)$ 
+		}
+	\end{algorithm}
+
+\newpage
+	\subsection{Búsqueda Local del Primer Mejor}
+	
+	Este algoritmo parte de una solución generada aleatoriamente y en cada iteración se generan soluciones del entorno (soluciones vecinas) hasta que se encuentra una que es mejor que la actual, la cual es entonces sustituida por la nueva solución generada. El algoritmo termina cuando se explora todo el vecindario y no se encuentra ninguna solución mejor o, para nuestro caso, cuando se han evaluado 100000 soluciones diferentes.
+	
+	Para generar la solución aleatoria de partida consideramos la siguiente función:
+	
+	\begin{algorithm}
+		\caption{\sc randomSolution}
+		\KwIn{tamaño de la solución $m$, \textit{matriz} de distancias}
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$sol \leftarrow \emptyset$ \tcp*{Partimos de la solución vacía} 
+			\While{ $|sol| < m$  }{
+				random $\leftarrow$  elemento aleatorio de $\{0,...,n-1\}$ \\
+				\If{random $\notin$ sol}{    
+					$sol \leftarrow sol \cup random$ \tcp*{ Si el elemento aleatorio considerado\\ no está ya en la solución, se añade} 
+				}	
+			}
+			\Return sol, $\operatorname{fitness}(sol, matriz)$ 
+		}
+	\end{algorithm}
+
+	Definimos otra función \lstinline|validElements|, que determina los elementos que son válidos para ser añadidos a un solución, es decir, aquellos elementos que no se encuentran ya en la misma:
+	
+	\begin{algorithm}
+		\caption{\sc validElements}
+		\KwIn{vector de enteros seleccionados, $sel$}
+		\KwIn{número total de elementos del problema, $n$}
+		\KwOut{vector de enteros no seleccionados}
+		\Begin{
+			$no\_sel \leftarrow \emptyset$ \tcp*{Partimos del vector de no seleccionados vacío} 
+			$elem \leftarrow 0$ \\
+			\While{ $|no\_sel| < n-|sel|$  }{ 
+				\If{elem $\notin$ sel}{\tcp{Si el elemento considerado en la iteración actual no se\\ encuentra en el conjunto de seleccionados, se añade\\ al vector de no seleccionados} 
+					$no\_sel \leftarrow no\_sel \cup elem$ 
+				}	
+				elem $\leftarrow$ elem + 1\;
+			}
+			\Return $no\_sel$ 
+		}
+	\end{algorithm}
+
+Para generar las soluciones vecinas, lo que se hace es escoger un elemento de la solución e intercambiarlo por otro elemento que no se encuentre en la misma, es decir, un elemento del conjunto devuelto por la función recién introducida. Se puede asegurar que este intercambio, cumpliendo las condiciones descritas, da siempre lugar a una solución válida. 
+
+Una solución vecina será aceptada si mejora a la solución actual, en otro caso se rechaza y se genera otra solución. La función \lstinline|improvement| se encarga de hacer esto. Es decir, determina si un cierto intercambio en la solución produce una mejora o no y en caso afirmativo actualiza la solución cambiando el elemento viejo por el nuevo y calculando el fitness de la nueva solución. Este cálculo resulta más eficiente si se factoriza, esto es, en vez de volver a considerar las distancias entre todos los elementos de la nueva solución, basta con sustraer del fitness antiguo la contribución del elemento eliminado y añadirle la contribución del nuevo elemento a la solución. 
+
+Para que se produzca una mejora, se debe cumplir que el nuevo elemento introducido tenga una mayor contribución a la solución que el elemento eliminado. Así, no hay que calcular la bondad de la nueva solución para compararla con la antigua, sino que es suficiente con determinar la contribución del elemento nuevo a la solución y compararla con la del elemento anterior. 
+
+Veamos ya el pseudo-código que lleva a cabo todas estas consideraciones:
+
+\begin{algorithm}[H]
+	\caption{\sc improvement}
+	\KwIn{sol: solución }
+	\KwIn{pos: posición de $sol$ cuyo elemento se va a cambiar}
+	\KwIn{$ old\_cont $: contribución a la solución del elemento que se encuentra en $pos$}
+	\KwIn{elem: nuevo elemento que se va a introducir en la posición $pos$ de $sol$}
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{mejora: booleano que indica si la solución mejora o no}
+	\KwOut{sol: nueva solución si se produce mejora o la antigua si no se mejora}
+	\Begin{
+		mejora $\leftarrow$ false \\
+		\tcp{Solución auxiliar que es copia de la solución considerada}
+		$nueva \leftarrow sol$  \\
+		\tcp{Elemento de la solución que se va a intercambiar}
+		$old\_elem \leftarrow sol[pos]$  \\
+		$nueva[pos] \leftarrow elem$  \\
+		 \tcp{Contribución del nuevo elemento a la solución actualizada}
+		$new\_cont \leftarrow \operatorname{contribution}(nueva, matriz, elem)$\\
+		\tcp{Si la contribución del nuevo elemento es mayor que la del antiguo, se produce mejora y se actualiza la solución}
+		\If{ $new\_cont > old\_cont$  }{			 
+			\tcp{Factorización de la función objetivo}
+			$nueva.fitness \leftarrow sol.fitness - old\_cont + new\_cont$ \\
+			$sol \leftarrow nueva $ \\
+			mejora $\leftarrow$ true
+		}
+		\Return mejora, $sol$
+	}
+\end{algorithm}
+\newpage
+	
+El elemento a intercambiar de la solución no se escoge de manera aleatoria, sino que se lleva a cabo una exploración inteligente del entorno de soluciones, enfocándonos en zonas donde se pueden obtener soluciones mejores. Concretamente, lo que se hace es calcular la contribución de cada elemento de la solución a la bondad de la misma, y seleccionar para intercambiar el elemento que menos contribuye. 
+La función \lstinline|lowestContribution| se encarga de esto:
+
+	\begin{algorithm}[H]
+	\caption{\sc lowestContribution}
+	\KwIn{sol: vector de enteros que determinan una solución}
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{$pos\_min$: posición en la solución \textit{sol} del elemento que menos contribuye}
+	\KwOut{ $min\_contrib$: contribución del elemento que menos contribuye}
+	\Begin{
+		$pos\_min \leftarrow -1$ \\
+		$min\_contrib \leftarrow \infty$ \\
+		\For{  i \textbf{in} indices of sol  }{ 
+			cont $\leftarrow \operatorname{contribution}(sol,matriz,sol[i])$ \\
+			\If{cont $< min\_contrib$}{
+				$pos\_min \leftarrow i$\\
+				$min\_contrib \leftarrow cont$
+			}	
+		}
+		\Return $pos\_min$, $min\_contrib$ 
+	}
+	\end{algorithm}
+\vspace{8mm}
+ 	Sólo nos queda un detalle del algoritmo por explicar y es qué elemento de entre los no seleccionados se introduce en la posición del elemento que menos contribuye para generar una solución vecina. Pues en este caso sí es totalmente aleatorio. Por ello, lo que hacemos es barajar en cada iteración el conjunto de elementos que no forman parte de la solución. 
+
+	Presentamos finalmente el algoritmo de la búsqueda local, que hace uso de todas estas funciones explicadas:
+	
+	\begin{algorithm}[H]
+		\caption{\sc localSearch}
+		\KwIn{m: tamaño de solución}
+		\KwIn{matriz: matriz de distancias}
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$num\_eval$ $\leftarrow$ 0 \\
+			mejora $\leftarrow$ true \\
+			\tcp{Empezamos con una solución aleatoria}
+			sol $\leftarrow \operatorname{randomSolution}(m,matriz)$ \\		 
+			\tcp{Elementos válidos para el intercambio}
+			$valid\_elements \leftarrow \operatorname{validElements}(sol, matriz.size)$  \\
+			\tcp{Elemento que menos contribuye y su contribución}
+			$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+			\tcp{Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones de la función objetivo}
+			\While{mejora \textbf{and} $num\_eval < 100000$}{
+				mejora $\leftarrow$ false \\
+				\tcp{$min\_contrib$ contiene tanto la posición como la contribución del elemento que menos contribuye}
+				$min\_pos \leftarrow min\_contrib.pos$ \\ 
+				\tcp{Guardamos el elemento antiguo que vamos a cambiar}
+				$old\_elem \leftarrow sol[min\_pos]$ \\
+				shuffle($valid\_elements$) \\
+				\tcp{/Intercambiamos el elemento que menos contribuye por todos los posibles hasta que se produzca una mejora}
+				\For{ k $\in valid\_elements$ \textbf{and} mejora \textbf{is} false \textbf{and} $num\_eval < 100000$}{
+					mejora $\leftarrow \operatorname{improvement}(sol,min\_pos,min\_contrib.contrib,k,matriz)$
+					$num\_eval \leftarrow num\_eval + 1$ \\ 
+				}
+			
+			  \If{mejora}{
+			  	\tcp{Actualizamos los elementos válidos, cambiando el elemento nuevo por el antiguo}
+			  	$valid\_elements \leftarrow valid\_elements\backslash\{k\}$\\
+			  	$valid\_elements \leftarrow valid\_elements\cup \{old\_elem\}$\\
+			  	\tcp{Determinamos el elemento que menos contribuye en la nueva solución}
+			  	$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+		  		}
+			}
+			\Return sol.elements, sol.fitness
+		}
+	\end{algorithm}
+	\newpage
+
+\subsection{Algoritmos genéticos generacionales}
+
+En este esquema, se selecciona una nueva población de soluciones a partir de otra población antigua, con tantas soluciones como tamaño tenga la población de la que se parte. Para ello, se usa el torneo binario, como ya describimos en la sección de aplicación de los algoritmos, aplicándolo tantas veces como sea necesario para obtener el tamaño de población buscado. Puesto que en el torneo binario las soluciones se eligen aleatoriamente, puede ocurrir que la nueva población de soluciones seleccionadas presente varias veces la misma solución.  El pseucódigo de este proceso es el siguiente:
+
+	
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc selection} }
+	\KwIn{Población \textit{old\_pop}}
+	\KwOut{Nueva población de soluciones $ new\_pop $}
+	\Begin{
+		$new\_pop.solutions\leftarrow \emptyset$\\
+		$new\_pop.best\_fitness\leftarrow 0$\\
+		$new\_pop.best\_sol\leftarrow -1$\\
+		\ForEach{$ i \in \{0,...,old\_pop.solutions.size()-1\} $}{
+			$pos\gets$ $\operatorname{binaryCompetition}(old\_pop)$ \\
+			new\_pop.solutions $\leftarrow$ $ new\_pop.solutions \cup old\_pop.solutions[pos] $
+		}
+		\Return new\_pop
+	}
+\end{algorithm}
+
+Las soluciones de esta nueva población se cruzarán por parejas, con una probabilidad de $0.7$ para cada pareja. Así, el número esperado de cruces será $0.7\times \frac{size\_pop}{2}=17.5$, siendo $size\_pop$ el tamaño de la población (50 en nuestro caso) y $\frac{size\_pop}{2}=25$ el número de parejas que se pueden formar. Para la implementación se toma la parte entera, siendo así 17 cruces los llevados a cabo en cada generación. Además, como las posiciones de las soluciones en la nueva población seleccionada son aleatorias (gracias al torneo binario), basta cruzar la solución $2i$ con la $2i+1$, $\forall i \in \{0,...,17\}$. Como resultado de cada cruce se generarán dos nuevas soluciones (serán igual a los padres si estos son la misma solución), que sustituyen a los padres en la población. Por lo tanto, el cruce en estos algoritmos queda como sigue:
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc cross} }
+	\KwIn{Población \textit{pop}, probabilidad de cruce por pareja $cross\_prob$}
+	\Begin{
+		num\_cross $\leftarrow cross\_prob \times pop.size()/2$\\
+		\ForEach{$ i \in \{0,...,num\_cross-1\} $}{
+			sol1 $\gets \operatorname{PCross/UCross}(pop.solutions[2i],pop.solutions[2i+1])$\tcp*{ Cruce uniforme}
+			sol2 $\gets \operatorname{PCross/UCross}(pop.solutions[2i],pop.solutions[2i+1])$\tcp*{o posicional}
+			$pop.solutions[2i]\gets$ sol1 \\
+			$pop.solutions[2i+1]\gets$ sol2 \\
+		}
+	}
+\end{algorithm}
+
+A continuación, se lleva a cabo una mutación aleatoria de algunos de los valores de ciertas soluciones de la nueva población. En concreto, cada valor se muta con una probabilidad de $0.1/m$, donde $m$ es el tamaño de un vector solución. Por tanto, el número esperado de mutaciones en una población será $0.1/m \times size\_pop \times m=0.1 \times size\_pop = 5$, teniendo en cuenta que $size\_pop=50$ en nuestro estudio. Se seleccionan entonces aleatoriamente tantas soluciones como número esperado de mutaciones (puede elegirse varias veces la misma solución) y se intercambian los valores de dos posiciones aleatorias de cada solución seleccionada haciendo uso de \lstinline|mutateSolution|.
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc mutation} }
+	\KwIn{Población \textit{pop}, probabilidad de mutación por solución $mut\_prob$, \textit{matrix} de distancias}
+	\Begin{
+		num\_mut $\leftarrow mut\_prob \times pop.size()$\\
+		\ForEach{$ i \in \{0,...,num\_mut-1\} $}{
+			pos $\leftarrow$  número aleatorio entre 0 y pop.size()-1 \\
+			pop.solutions[pos] $\gets \operatorname{mutateSolution}(pop.solutions[pos],matrix)$
+		}
+	}
+\end{algorithm}
+
+
+Finalmente, hay que reemplazar la población antigua (de la iteración anterior) por esta nueva población obtenida tras el cruce y mutación. Para ello, usamos el operador de reemplazamiento que simplemente sustituye la población antigua por la nueva, y, en caso de que la mejor solución de la población nueva no mejore a la mejor solución de la población anterior (en términos de un mayor fitness), se busca la posición de la peor solución presente en la población nueva (de lo cual se encarga la función \lstinline|worstSolution|, cuyo pseudocódigo no se incluye por no tener mayor interés) y se inserta en ella la mejor solución de la población antigua. 
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc replace} }
+	\KwIn{Dos poblaciones de soluciones $ new\_pop $ y $old\_pop$, \textit{matrix} de distancias}
+	\KwOut{Población $old\_pop$ reemplazada por $ new\_pop $}
+	\Begin{
+		\If{old\_pop.best\_fitness $>$ new\_pop.best\_fitness}{
+			new\_pop.best\_fitness $\leftarrow$ old\_pop.best\_fitness \\
+			pos $\leftarrow \operatorname{worstSolution}(new\_pop)$ \\
+			new\_pop.solutions[pos] $\leftarrow$ old\_pop.solutions[old\_pop.best\_sol] \\
+			new\_pop.best\_sol $\leftarrow$ pos
+		}
+			old\_pop $\leftarrow$ new\_pop\\
+			\Return old\_pop
+	}
+\end{algorithm}
+
+La función principal que llama a todos estos operadores y representa el esquema de evolución es la siguiente: 
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc AGG}}
+	\KwIn{\textit{matrix} de distancias, número de elementos a seleccionar en una solución $ m $}
+	\KwOut{Población evolucionada, obtenida tras varias iteraciones del algoritmo}
+	\Begin{
+		evaluations $\leftarrow$ 0\\
+		 generations $\leftarrow$ 1\\
+		size\_pop $\leftarrow$ 50 \\
+		mut\_prob $\leftarrow$ 0.1 \tcp*{Probabilidad de mutación por solución}
+		cross\_prob $\leftarrow$ 0.7 \tcp*{Probabilidad de cruce por solución}
+		old\_pop $\leftarrow$ randomPopulation(size\_pop,m,matrix,evaluations) \tcp*{Partimos de \\una población aleatoria}
+		\While{evaluations $<$ 100000}{
+		new\_pop $\leftarrow$ selection(old\_pop)\\
+		cross(new\_pop) \tcp*{Cruce uniforme o posicional, según el caso}
+		mutation(new\_pop)\\
+		\tcp{Evaluamos las soluciones de la nueva población}
+		new\_pop $\leftarrow$ evaluatePopulation(new\_pop,matrix,evaluations)\\
+		replace(old\_pop,new\_pop,matrix) \\
+		generations ++ \\
+		}
+		\Return old\_pop
+	}
+\end{algorithm}
+
+Como vemos, se parte de una población inicial de soluciones generada aleatoriamente y se van generando durante varias iteraciones nuevas poblaciones completas, mediante la aplicación de los operadores de cruce y mutación, que sustituyen a la población de la iteración anterior en cada caso gracias al operador de reemplazamiento. El algoritmo para cuando se han realizado 100000 evaluaciones de la función fitness. Puede ocurrir que se supere este número, pues no se realiza la comprobación $ evaluations<100000 $ en mitad de una iteración, pero no en más de 40, ya que el máximo número de evaluaciones que se pueden llevar a cabo en una iteración es de 36(soluciones hijas) + 5 (mutaciones) = 41. Se imprime por pantalla el fitness de la mejor solución de la población obtenida en la última iteración, el tiempo en segundos que tarda en ejecutarse el algoritmo, el número de iteraciones (generaciones producidas) y el número de evaluaciones de la función objetivo (para comprobar que no se superan las 100040).
+ 
+\subsection{Algoritmos genéticos estacionarios}
+
+En estos algoritmos se seleccionan únicamente dos soluciones de entre una población dada (usando torneo binario), las cuales serán cruzadas posteriormente para generar dos nuevas soluciones que las sustituyen. Es posible que las dos soluciones seleccionadas sean la misma, en cuyo caso los hijos serán iguales al padre. La selección queda en este caso como sigue: 
+
+
+	\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc pairSelection} }
+	\KwIn{Población de soluciones\textit{pop}}
+	\KwOut{Dos soluciones de \textit{pop}}
+	\Begin{
+		$pos1 \gets$ $\operatorname{binaryCompetition}(pop)$ \\
+		$pos2 \gets$ $\operatorname{binaryCompetition}(pop)$ \\
+		$sol1 \gets$ $pop.solutions[pos1]$ \\
+		$sol2 \gets$ $pop.solutions[pos2]$ \\
+		
+		\Return sol1,sol2
+	}
+\end{algorithm}
+
+Estas dos soluciones se cruzan (usando el operador de cruce basado en posición o el uniforme) y generan dos hijos: 
+
+	\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc pairCross} }
+	\KwIn{Dos solucinoes padre, \textit{p1} y \textit{p2}}
+	\KwOut{Dos nuevas soluciones hijas, \textit{s1} y \textit{s2}}
+	\Begin{
+		$s1 \gets$ $\operatorname{cross}(p1,p2)$ \tcp*{Cruce uniforme o posicional, según el caso}
+		$s2 \gets$ $\operatorname{cross}(p1,p2)$ \\
+		
+		\Return s1,s2
+	}
+\end{algorithm}
+
+Para la mutación, en este caso sólo tenemos dos posibles soluciones que mutar, luego el número esperado de mutaciones en una generación será de $0.1/m \times 2 \times m=0.1 \times 2 = 0.2$. Así, con probabilidad $ 0.2 $, se selecciona aleatoriamente una de las dos soluciones y se mutan dos valores aleatorios de la misma usando \lstinline|mutateSolution|.
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc pairMutation} }
+	\KwIn{Dos soluciones \textit{s1} y \textit{s2}, probabilidad de mutación por solución $mut\_prob$,\\ \textit{matrix} de distancias}
+	\Begin{
+		\If{número aleatorio entre 0 y 1 $<$ 2*mut\_prob}{
+			pos $\leftarrow$ número aleatorio 0 ó 1\\
+			\uIf{pos = 0}{mutateSolution(s1,matrix)}
+			\Else {mutateSolution(s2,matrix)}
+		} 
+	}
+\end{algorithm}
+
+Como en este esquema sólo se generan dos nuevas soluciones en cada iteración y no una nueva población completa, el reemplazamiento consiste aquí en introducir en la población anterior las dos nuevas soluciones en las posiciones de las dos peores soluciones de dicha población, siempre y cuando estas nuevas soluciones sean mejores que las dos peores soluciones de la población (o sólo una es mejor). Es decir, las nuevas soluciones compiten con las dos peores de la población. Para determinar las posiciones de las dos peores soluciones se usa la función \lstinline|worstSolutions|, cuyo pseudocódigo no es importante y no se inlcuye en la memoria. 
+
+\begin{algorithm}[H]
+	\caption{ \sc replace}
+	\KwIn{Población $pop$, dos soluciones \textit{s1} y \textit{s2}}
+	\KwOut{Población $pop$ modificada}
+	\Begin{
+		
+		worst1, worst2 $\leftarrow $ worstSolutions(pop) \tcp*{Índices de las dos peores soluciones de\\ la población siendo worst1 la peor de las dos}
+		
+		worst\_sol $\leftarrow$ solución con menor fitness entre s1 y s2 \\
+		best\_sol $\leftarrow$ solución con mejor fitness entre s1 y s2 \\
+		\tcp{Si las soluciones s1 y s2 son mejores que las peores de la población,\\ las intercambiamos}
+		\eIf{pop[worst1].fitness $<$ worst\_sol.fitness \textbf{and} pop[worst2].fitness $<$ best\_sol.fitness}{
+			pop[worst1] $\leftarrow$ worst\_sol\;
+			pop[worst2] $\leftarrow$ best\_sol\;
+			\tcp{Si el fitness de la mejor solución introducida supera al de\\ la poblacion, actualizamos la mejor solución de la población}
+			\If{best\_sol.fitness $ > $ pop.best\_fitness}{
+				pop.best\_fitness $\leftarrow$ best\_sol.fitness \\
+				pop.best\_sol $\leftarrow$ worst2\\	
+			}
+		}{ 
+			\tcp{La mejor solución es mejor que la peor de la población}
+			\If{pop[worst1].fitness $<$ best\_sol.fitness}{
+				pop[worst1] $\leftarrow$ best\_sol\;
+				\If{best\_sol.fitness $ > $ pop.best\_fitness}{
+					pop.best\_fitness $\leftarrow$ best\_sol.fitness \\
+					pop.best\_sol $\leftarrow$ worst2\\	
+				}
+			}
+		}
+	}
+\end{algorithm}
+
+Ya podemos ver el pseudocódigo de la función principal:
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc AGE}}
+	\KwIn{\textit{matrix} de distancias, número de elementos a seleccionar en una solución $ m $}
+	\KwOut{Población evolucionada, obtenida tras varias iteraciones del algoritmo}
+	\Begin{
+		evaluations $\leftarrow$ 0\\
+		size\_pop $\leftarrow$ 50 \\
+		mut\_prob $\leftarrow$ 0.1 \tcp*{Probabilidad de mutación por solución}
+		pop $\leftarrow$ randomPopulation(size\_pop,m,matrix,evaluations) \tcp*{Partimos de \\una población aleatoria}
+		\While{evaluations $<$ 100000}{
+			p1,p2 $\leftarrow$ pairSelection(pop)\\
+			s1,s2 $\leftarrow$ pairCross(p1,p2) \tcp*{Cruce uniforme o posicional, según el caso}
+			pairMutation(s1,s2,mut\_prob,matrix)\\
+			\tcp{Evaluamos las dos soluciones obtenidas}
+			s1.fitness $\leftarrow$ fitness(s1,matrix) \\
+			s1.evaluated $\leftarrow$ true \\
+			s2.fitness $\leftarrow$ fitness(s2,matrix) \\
+			s2.evaluated $\leftarrow$ true \\
+			evaluations $\leftarrow$ evaluations + 2 \\
+			replace(pop,s1,s2) \\
+		}
+		\Return pop
+	}
+\end{algorithm}
+
+En este caso, sólo se puede superar el límite de evaluaciones de la función objetivo en 1. La función imprime por pantalla el fitness de la mejor solución de la población obtenida en la última iteración y el tiempo de ejecución en segundos. 
+
+\subsection{Algoritmos meméticos}
+
+Estos algoritmos combinan el algoritmo genético generacional con operador de cruce uniforme (pues como veremos es el que presenta mejores resultados) y el algoritmo de la búsqueda local. Este último se aplicará cada 10 iteraciones(generaciones) del algoritmo genético a ciertas soluciones de la población obtenida en esa iteración. 
+
+Cabe destacar que es necesario transformar las soluciones en binario a soluciones de enteros y viceversa, pues cada uno de los algoritmos (AGG y BL) trabaja con una estructura diferente de solución. De esto se encargan las funciones \lstinline|BinToInt| e \lstinline|IntToBin|, respectivamente, cuyo pseudocódigo no mostramos por no tener interés. 
+
+Para estos algoritmos modificamos ligeramente el pseudocódigo de la búsqueda local, pues estableceremos que en cada ejecución de la misma no se superen las 400 evaluaciones de la función objetivo y además hay que tener en cuenta que en total no se pueden sobrepasar las 100000 evaluaciones.  Así, consideramos dos variables: \lstinline|num_eval| (número de evaluaciones en esa ejecución de BL) y \lstinline|evaluations| (evaluaciones totales del fitness llevadas a cabo hasta ese momento por el algoritmo memético). 
+\\
+	\begin{algorithm}[H]
+	\caption{\sc localSearch}
+	\KwIn{m: tamaño de solución, matriz: matriz de distancias, \\ evaluations: número de evaluaciones de la función objetivo,\\ sol: solución de partida para el algoritmo}
+	\KwOut{solución válida del problema MDP junto con su fitness}
+	\Begin{
+		$num\_eval$ $\leftarrow$ 0 \\
+		mejora $\leftarrow$ true \\	 
+		\tcp{Elementos válidos para el intercambio}
+		$valid\_elements \leftarrow \operatorname{validElements}(sol, matriz.size)$  \\
+		\tcp{Elemento que menos contribuye y su contribución}
+		$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+		\tcp{Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones de la función objetivo}
+		\While{mejora \textbf{and} $num\_eval < 400$ \textbf{and} $evaluations<100000$}{
+			mejora $\leftarrow$ false \\
+			\tcp{$min\_contrib$ contiene tanto la posición como la contribución del elemento que menos contribuye}
+			$min\_pos \leftarrow min\_contrib.pos$ \\ 
+			\tcp{Guardamos el elemento antiguo que vamos a cambiar}
+			$old\_elem \leftarrow sol[min\_pos]$ \\
+			shuffle($valid\_elements$) \\
+			\tcp{/Intercambiamos el elemento que menos contribuye por todos los posibles hasta que se produzca una mejora}
+			\For{ k $\in valid\_elements$ \textbf{and} mejora \textbf{is} false \textbf{and} $num\_eval < 400$ \textbf{and} $evaluations<100000$}{
+				mejora $\leftarrow \operatorname{improvement}(sol,min\_pos,min\_contrib.contrib,k,matriz)$
+				$num\_eval \leftarrow num\_eval + 1$ \\ 
+				$evaluations \leftarrow evaluations  + 1$ \\ 
+			}
+			
+			\If{mejora}{
+				\tcp{Actualizamos los elementos válidos, cambiando el elemento nuevo por el antiguo}
+				$valid\_elements \leftarrow valid\_elements\backslash\{k\}$\\
+				$valid\_elements \leftarrow valid\_elements\cup \{old\_elem\}$\\
+				\tcp{Determinamos el elemento que menos contribuye en la nueva solución}
+				$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+			}
+		}
+		\Return sol
+	}
+\end{algorithm}
+
+Estudiamos distintas versiones de estos algoritmos, según las soluciones a las que se aplica búsqueda local.
+
+Todos los algoritmos imprimen por pantalla el fitness de la mejor solución de la población obtenida en la última iteración, el tiempo en segundos que tarda en ejecutarse el algoritmo, el número de iteraciones (generaciones producidas) y el número de evaluaciones de la función objetivo. 
+
+\subsubsection{AM-(10,1)}
+
+En esta versión se aplica la búsqueda local cada 10 generaciones a todas las soluciones de la población. 
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc AM1}}
+	\KwIn{\textit{matrix} de distancias, número de elementos a seleccionar en una solución $ m $}
+	\KwOut{Población evolucionada, obtenida tras varias iteraciones del algoritmo}
+	\Begin{
+		evaluations $\leftarrow$ 0\\
+		generations $\leftarrow$ 1\\
+		size\_pop $\leftarrow$ 50 \\
+		mut\_prob $\leftarrow$ 0.1 \tcp*{Probabilidad de mutación por solución}
+		cross\_prob $\leftarrow$ 0.7 \tcp*{Probabilidad de cruce por solución}
+		old\_pop $\leftarrow$ randomPopulation(size\_pop,m,matrix,evaluations) \tcp*{Partimos de \\una población aleatoria}
+		\While{evaluations $<$ 100000}{
+			new\_pop $\leftarrow$ selection(old\_pop)\\
+			cross(new\_pop) \tcp*{Cruce uniforme}
+			mutation(new\_pop)\\
+			\tcp{Evaluamos las soluciones de la nueva población}
+			new\_pop $\leftarrow$ evaluatePopulation(new\_pop,matrix,evaluations)\\
+			\tcp{Se ejecuta cada 10 generaciones}
+			\If{$ generations \mod 10 = 0 $}{
+			\For{$ i \in [0,size\_pop) $ \textbf{and} $ evaluations < 100000 $}{
+			sol $\leftarrow$ BinToInt(new\_pop.solutions[i]) \tcp*{Transformamos la solución\\ de binario a enteros}
+			sol $\leftarrow$ localSearch(matrix,sol,evaluations,m)\\
+			new\_pop.solutions[i] $\leftarrow$ IntToBin(sol)\tcp*{Transformamos la solución\\ de enteros a binario}
+			\tcp{Se actualiza la mejor solución de la nueva población}
+			updateBest(new\_pop) \\
+			}
+			}
+			replace(old\_pop,new\_pop,matrix) \\
+			generations ++ \\
+		}
+		\Return old\_pop
+	}
+\end{algorithm}
+
+\subsubsection{AM-(10,0.1)}
+
+Ahora aplicamos la búsqueda local (cada 10 generaciones) a un subconjunto de soluciones aleatorias seleccionadas con probabilidad 0.1. Por tanto, el número de soluciones a las que se aplicará la búsqueda local será de  $0.1\times size\_pop=5$. Lo que hacemos entonces es seleccionar aleatoriamente 5 soluciones de la población obtenida y aplicar sobre ellas la búsqueda local. 
+\\
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc AM2}}
+	\KwIn{\textit{matrix} de distancias, número de elementos a seleccionar en una solución $ m $}
+	\KwOut{Población evolucionada, obtenida tras varias iteraciones del algoritmo}
+	\Begin{
+		evaluations $\leftarrow$ 0\\
+		generations $\leftarrow$ 1\\
+		size\_pop $\leftarrow$ 50 \\
+		mut\_prob $\leftarrow$ 0.1 \tcp*{Probabilidad de mutación por solución}
+		cross\_prob $\leftarrow$ 0.7 \tcp*{Probabilidad de cruce por solución}
+		num\_local $\leftarrow$ 0.1*size\_pop \tcp*{Número de soluciones a las que se aplica BL}
+		old\_pop $\leftarrow$ randomPopulation(size\_pop,m,matrix,evaluations) \tcp*{Partimos de \\una población aleatoria}
+		\While{evaluations $<$ 100000}{
+			new\_pop $\leftarrow$ selection(old\_pop)\\
+			cross(new\_pop) \tcp*{Cruce uniforme}
+			mutation(new\_pop)\\
+			\tcp{Evaluamos las soluciones de la nueva población}
+			new\_pop $\leftarrow$ evaluatePopulation(new\_pop,matrix,evaluations)\\
+			\tcp{Se ejecuta cada 10 generaciones}
+			\If{$ generations \mod 10 = 0 $}{
+				\For{$ i \in [0,num\_local) $ \textbf{and} $ evaluations < 100000 $}{
+					rand\_pos $\leftarrow$ número aleatorio en $[0,size\_pop)$ \\
+					sol $\leftarrow$ BinToInt(new\_pop.solutions[rand\_pos]) \tcp*{Transformamos la solución\\ de binario a enteros}
+					sol $\leftarrow$ localSearch(matrix,sol,evaluations,m)\\
+					new\_pop.solutions[rand\_pos] $\leftarrow$ IntToBin(sol)\tcp*{Transformamos la solución\\ de enteros a binario}
+					\tcp{Se actualiza la mejor solución de la nueva población}
+					updateBest(new\_pop) \\
+				}
+			}
+			replace(old\_pop,new\_pop,matrix) \\
+			generations ++ \\
+		}
+		\Return old\_pop
+	}
+\end{algorithm}
+
+
+\subsubsection{AM-(10,0.1mejores)}
+
+En esta ocasión consideramos las $0.1\times size\_pop = 5$ mejores soluciones de la población para aplicarles la búsqueda local cada 10 generaciones. Para ello, se ordenan todas las soluciones de la población de mayor a menor fitness y aplica la búsqueda local a las 5 primeras. 
+\\
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc AM3}}
+	\KwIn{\textit{matrix} de distancias, número de elementos a seleccionar en una solución $ m $}
+	\KwOut{Población evolucionada, obtenida tras varias iteraciones del algoritmo}
+	\Begin{
+		evaluations $\leftarrow$ 0\\
+		generations $\leftarrow$ 1\\
+		size\_pop $\leftarrow$ 50 \\
+		mut\_prob $\leftarrow$ 0.1 \tcp*{Probabilidad de mutación por solución}
+		cross\_prob $\leftarrow$ 0.7 \tcp*{Probabilidad de cruce por solución}
+		num\_local $\leftarrow$ 0.1*size\_pop \tcp*{Número de soluciones a las que se aplica BL}
+		old\_pop $\leftarrow$ randomPopulation(size\_pop,m,matrix,evaluations) \tcp*{Partimos de \\una población aleatoria}
+		\While{evaluations $<$ 100000}{
+			new\_pop $\leftarrow$ selection(old\_pop)\\
+			cross(new\_pop) \tcp*{Cruce uniforme}
+			mutation(new\_pop)\\
+			\tcp{Evaluamos las soluciones de la nueva población}
+			new\_pop $\leftarrow$ evaluatePopulation(new\_pop,matrix,evaluations)\\
+			\tcp{Se ejecuta cada 10 generaciones}
+			\If{$ generations \mod 10 = 0 $}{
+				\tcp{Vector con parejas (fitness,posición) asociadas a cada solución de la población} 
+				solutions $\leftarrow \emptyset$ \\
+				\ForEach{$ i \in [0,size\_pop) $}{
+					solutions $\leftarrow$ solutions$\cup \{ (new\_pop[i].fitness,i)\}$
+				}
+				
+				sort(solutions) \tcp*{Se ordenan las soluciones de mayor a menor fitness}
+				\For{$ j \in [0,num\_local) $ \textbf{and} $ evaluations < 100000 $}{
+					sol $\leftarrow$ BinToInt(new\_pop[solutions[j].second]) \tcp*{Transformamos la solución\\ de binario a enteros}
+					sol $\leftarrow$ localSearch(matrix,sol,evaluations,m)\\
+					new\_pop[solutions[j].second] $\leftarrow$ IntToBin(sol)\tcp*{Transformamos la solución\\ de enteros a binario}
+				}
+				\tcp{Se actualiza la mejor solución de la nueva población}
+				updateBest(new\_pop) \\
+				}
+			replace(old\_pop,new\_pop,matrix) \\
+			generations ++ \\
+		}
+		\Return old\_pop
+	}
+\end{algorithm}
+
+\newpage
+	\section{Procedimiento para el desarrollo de la práctica}
+	
+	La implementación de todos los algoritmos ha sido llevada a cabo usando el lenguaje C++ y la librería STL, de la cual usamos los tipos de estructuras de datos \textbf{set} y \textbf{vector}, como ya hemos comentado. Además, se utilizan las siguientes funciones:
+	\begin{itemize}
+		\item \lstinline|clock| de la librería \lstinline|time.h| para medir el tiempo de ejecución
+		\item  \lstinline|shuffle|, \lstinline|find| y \lstinline|sort|  de la librería \lstinline|algorithm|
+		\item \lstinline|rand|, para generar números pseudo-aleatorios y \lstinline|srand|, para fijar una semilla, de \lstinline|stdlib.h|
+		\item  \lstinline|numeric_limits<double>::infinity()| de la librería \lstinline|limits| para inicializar los valores mínimos a infinito
+	\end{itemize} 
+
+
+	\subsection{Manual de usuario}
+	
+	Los ejecutables de cada uno de los algoritmos estudiados se encuentran en la carpeta \textbf{bin} del proyecto. Disponemos de los siguientes archivos:
+	\begin{itemize}
+		\item [-] greedy $ \rightarrow $ algoritmo greedy
+			\item [-] localSearch $ \rightarrow $  algoritmo de búsqueda local del primer mejor
+			\item [-] AGGPos $ \rightarrow $  algoritmo genético generacional con operador de cruce basado en posición
+			\item [-] AGGPos-ternary $ \rightarrow $  algoritmo genético generacional con operador de cruce basado en posición y selección por torneo de tamaño 3
+			\item [-] AGGPos-bestcross $ \rightarrow $  algoritmo genético generacional con operador de cruce basado en posición modificado, donde siempre se cruza la mejor solución
+			\item [-] AGEPos $ \rightarrow $  algoritmo genético estacionario con operador de cruce basado en posición
+			\item [-] AGEPos-ternary $ \rightarrow $  algoritmo genético estacionario con operador de cruce basado en posición y selección por torneo de tamaño 3
+			\item [-] AGEUnif $ \rightarrow $  algoritmo genético estacionario con operador de cruce uniforme
+			\item [-] AGGUnif $ \rightarrow $  algoritmo genético generacional con operador de cruce uniforme
+			\item [-] AGGUnif-2 $ \rightarrow $  algoritmo genético estacionario con operador de cruce uniforme modificado
+			\item [-] AM1 $ \rightarrow $  primera versión de los algoritmos meméticos AM-(10,1)
+			\item [-] AM2 $ \rightarrow $  segunda versión de los algoritmos meméticos AM-(10,0.1)
+			\item [-] AM2-2 $ \rightarrow $  segunda versión de los algoritmos meméticos modificada AM-(1,0.1)
+			\item [-] AM3 $ \rightarrow $  tercera versión de los algoritmos meméticos AM-(10,0.1mejores)
+			\item [-] AM3-peores $ \rightarrow $  tercera versión de los algoritmos meméticos modificada AM-(10,0.1peores)
+			
+	\end{itemize}
+	
+	Todos muestran los resultados por pantalla en el formato \textit{Fitness, Tiempo de ejecución (s)},\\ y para algunos algoritmos \textit{Fitness, Tiempo de ejecución (s), Generaciones, Evaluaciones} (en los que ya hemos ido comentando) pero podemos redirigir la salida al fichero que queramos. Además, la semilla se le pasa como parámetro y leen los datos  de la entrada estándar. Así, para ejecutar el algoritmo AM-(10,1) por ejemplo, con el fichero de datos de entrada $MDG-a\_1\_n500\_m50.txt$, con semilla 4 y con salida en el fichero \textit{AM1.csv}, basta con escribir en consola la siguiente sentencia:
+	
+	 \lstinline| bin/AM1 4 < data/MDG-a_1_n500_m50.txt >> salida/AM1.csv|
+	
+	Para el algoritmo Greedy la sentencia sería igual pero sin incorporar la semilla. 
+	
+	Para automatizar el proceso de ejecución de cada algoritmo sobre los distintos casos de estudio, se dispone de los script \lstinline|execute_p1.sh|, \lstinline|execute_genetic.sh|, \lstinline|execute_memetic.sh|, \lstinline|execute_extras.sh|, que se encargan de la ejecución de los algoritmos de la práctica 1, los algoritmos genéticos, los algoritmos meméticos y los algoritmos extra, respectivamente. La semilla se fija dentro de estos archivos en la variable \lstinline|semilla|, por lo que para ejecutar los algoritmos con todos los ficheros de datos con una semilla diferente, solo hay que cambiar el valor de dicha variable y ejecutar el script correspondiente. 
+	
+	Por otra parte, como era de esperar, el fichero \lstinline|makefile| se encarga de la compilación. Al escribir en consola la orden \lstinline|make all| se compilan todos los ficheros de código fuente. Con las órdenes \lstinline|make execute_p1|, \lstinline|make execute_genetic|, \lstinline|make execute_memetic| y  \lstinline|make execute_extras| se compilan los ficheros necesarios y se ejecuta el script del mismo nombre. 
+	
+	\section{Experimentos y análisis de resultados}
+	
+	Los experimentos han sido realizados en el mismo ordenador, que tiene las siguientes características: sistema operativo Ubuntu 20.04.1 64 bits, procesador Intel Core i7-6500U 2.50GHz, memoria RAM 8GB DDR3 L.
+	
+	Los resultados han sido obtenidos fijando la semilla:
+	\vspace{-5mm} \begin{center}{ $ 7413 $}\end{center}
+ \vspace{-4mm}
+	
+	Los \underline{casos del problema} considerados son 30, elegidos de los casos recopilados en la biblioteca \textbf{MDPLib}. Concretamente, se estudia el grupo de casos \textbf{MDG}, del que se han seleccionado las 10 primeras instancias del \textit{tipo a} (matrices $n\times n$ con distancias enteras aleatorias en $ \{0,10\} $, n=500 y m=50), 10 instancias (entre la 21 y la 30) del \textit{tipo b} (matrices $n\times n$ con distancias reales aleatorias en [0,1000], n=2000 y m=200) y otras 10 instancias (1,2,8,9,10,13,14,15,19,20) del \textit{tipo c} (matrices $n\times n$ con distancias enteras aleatorias en $ \{00,1000\} $, n=3000 y\\ $ m=\{300,400,500,600\} $).
+	
+	\subsection{Resultados obtenidos}
+	
+	Presentamos a continuación los valores de coste, desviación  y tiempo de ejecución obtenidos para cada uno de los algoritmos considerados y para cada caso de estudio.
+	\newpage
+	\subsubsection{Algoritmo Greedy}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			MDG-a\_1\_n500\_m50 & 6865.94 & 12.36 & 0.00431 \\ \hline
+			MDG-a\_2\_n500\_m50 & 6754.02 & 13.09 & 0.004396 \\ \hline
+			MDG-a\_3\_n500\_m50 & 6741.6 & 13.12 & 0.004332 \\ \hline
+			MDG-a\_4\_n500\_m50 & 6841.59 & 11.95 & 0.004125 \\ \hline
+			MDG-a\_5\_n500\_m50 & 6740.34 & 13.09 & 0.004243 \\ \hline
+			MDG-a\_6\_n500\_m50 & 7013.94 & 9.77 & 0.004313 \\ \hline
+			MDG-a\_7\_n500\_m50 & 6637.46 & 14.59 & 0.004386 \\ \hline
+			MDG-a\_8\_n500\_m50 & 6946.28 & 10.38 & 0.004014 \\ \hline
+			MDG-a\_9\_n500\_m50 & 6898.01 & 11.22 & 0.004446 \\ \hline
+			MDG-a\_10\_n500\_m50 & 6853.68 & 11.91 & 0.00442 \\ \hline
+			MDG-b\_21\_n2000\_m200 & 10314568.35 & 8.72 & 0.450164 \\ \hline
+			MDG-b\_22\_n2000\_m200 & 10283328.5 & 8.89 & 0.448588 \\ \hline
+			MDG-b\_23\_n2000\_m200 & 10224214.16 & 9.52 & 0.444544 \\ \hline
+			MDG-b\_24\_n2000\_m200 & 10263575.47 & 9.10 & 0.456051 \\ \hline
+			MDG-b\_25\_n2000\_m200 & 10250090.79 & 9.26 & 0.438881 \\ \hline
+			MDG-b\_26\_n2000\_m200 & 10196189.88 & 9.71 & 0.535054 \\ \hline
+			MDG-b\_27\_n2000\_m200 & 10358195.61 & 8.38 & 0.652858 \\ \hline
+			MDG-b\_28\_n2000\_m200 & 10277383.17 & 8.89 & 0.514529 \\ \hline
+			MDG-b\_29\_n2000\_m200 & 10291258.67 & 8.90 & 0.453689 \\ \hline
+			MDG-b\_30\_n2000\_m200 & 10263859.33 & 9.14 & 0.437068 \\ \hline
+			MDG-c\_1\_n3000\_m300 & 22943111 & 7.80 & 1.557347 \\ \hline
+			MDG-c\_2\_n3000\_m300 & 22982398 & 7.72 & 1.703191 \\ \hline
+			MDG-c\_8\_n3000\_m400 & 40434465 & 6.91 & 2.50232 \\ \hline
+			MDG-c\_9\_n3000\_m400 & 40488295 & 6.79 & 2.391048 \\ \hline
+			MDG-c\_10\_n3000\_m400 & 40455410 & 6.95 & 2.641655 \\ \hline
+			MDG-c\_13\_n3000\_m500 & 63170811 & 5.73 & 3.631593 \\ \hline
+			MDG-c\_14\_n3000\_m500 & 62817710 & 6.21 & 3.497278 \\ \hline
+			MDG-c\_15\_n3000\_m500 & 63066444 & 5.86 & 3.515948 \\ \hline
+			MDG-c\_19\_n3000\_m600 & 90566205 & 5.30 & 4.681146 \\ \hline
+			MDG-c\_20\_n3000\_m600 & 90602264 & 5.27 & 5.020458 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Resultados para el algoritmo Greedy}
+	\label{}
+\end{table}
+\newpage
+\subsubsection{Búsqueda local del primer mejor}
+
+\begin{table}[H]
+	\begin{center}
+\begin{tabular}{|l|c|c|c|} 
+	\hline
+	\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			MDG-a\_1\_n500\_m50 & 7599.76 & 2.99 & 0.002025 \\ \hline
+			MDG-a\_2\_n500\_m50 & 7679.05 & 1.19 & 0.001863 \\ \hline
+			MDG-a\_3\_n500\_m50 & 7636.37 & 1.59 & 0.001918 \\ \hline
+			MDG-a\_4\_n500\_m50 & 7589.15 & 2.33 & 0.001854 \\ \hline
+			MDG-a\_5\_n500\_m50 & 7588.68 & 2.15 & 0.002375 \\ \hline
+			MDG-a\_6\_n500\_m50 & 7589.2 & 2.37 & 0.001465 \\ \hline
+			MDG-a\_7\_n500\_m50 & 7616.8 & 1.99 & 0.001889 \\ \hline
+			MDG-a\_8\_n500\_m50 & 7570.99 & 2.32 & 0.001829 \\ \hline
+			MDG-a\_9\_n500\_m50 & 7650.44 & 1.54 & 0.001972 \\ \hline
+			MDG-a\_10\_n500\_m50 & 7623.53 & 2.02 & 0.001726 \\ \hline
+			MDG-b\_21\_n2000\_m200 & 11194345.39 & 0.93 & 0.078849 \\ \hline
+			MDG-b\_22\_n2000\_m200 & 11198330.26 & 0.78 & 0.121368 \\ \hline
+			MDG-b\_23\_n2000\_m200 & 11182727.52 & 1.04 & 0.090211 \\ \hline
+			MDG-b\_24\_n2000\_m200 & 11184415.56 & 0.94 & 0.125306 \\ \hline
+			MDG-b\_25\_n2000\_m200 & 11202715.92 & 0.83 & 0.134078 \\ \hline
+			MDG-b\_26\_n2000\_m200 & 11152433.18 & 1.24 & 0.116869 \\ \hline
+			MDG-b\_27\_n2000\_m200 & 11189891.7 & 1.02 & 0.119383 \\ \hline
+			MDG-b\_28\_n2000\_m200 & 11157321.43 & 1.09 & 0.106994 \\ \hline
+			MDG-b\_29\_n2000\_m200 & 11192932.07 & 0.92 & 0.104435 \\ \hline
+			MDG-b\_30\_n2000\_m200 & 11152329.79 & 1.28 & 0.078128 \\ \hline
+			MDG-c\_1\_n3000\_m300 & 24648263 & 0.95 & 0.501001 \\ \hline
+			MDG-c\_2\_n3000\_m300 & 24676154 & 0.92 & 0.512707 \\ \hline
+			MDG-c\_8\_n3000\_m400 & 43098299 & 0.78 & 0.898523 \\ \hline
+			MDG-c\_9\_n3000\_m400 & 43141730 & 0.68 & 1.175382 \\ \hline
+			MDG-c\_10\_n3000\_m400 & 43201539 & 0.63 & 1.046369 \\ \hline
+			MDG-c\_13\_n3000\_m500 & 66668600 & 0.52 & 1.660269 \\ \hline
+			MDG-c\_14\_n3000\_m500 & 66693391 & 0.43 & 1.673518 \\ \hline
+			MDG-c\_15\_n3000\_m500 & 66783597 & 0.31 & 1.794494 \\ \hline
+			MDG-c\_19\_n3000\_m600 & 95307787 & 0.34 & 3.095673 \\ \hline
+			MDG-c\_20\_n3000\_m600 & 95315225 & 0.34 & 3.067012 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Resultados para el algoritmo de búsqueda local del primer mejor}
+	\label{}
+\end{table}
+\newpage
+
+\subsubsection{AGG con operador de cruce basado en posición}
+\begin{table}[H]
+		\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+		MDG-a\_1\_n500\_m50 & 7640.3000 & 2.47 & 6.3353 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7551.9700 & 2.83 & 6.2692 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7574.3100 & 2.38 & 6.2851 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7580.1600 & 2.45 & 6.1060 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7443.9500 & 4.01 & 6.2518 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7505.3600 & 3.45 & 6.4323 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7585.5200 & 2.40 & 6.3148 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7537.2600 & 2.76 & 6.2330 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7541.3700 & 2.94 & 6.1885 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7528.3700 & 3.24 & 6.1245 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 11005496.3700 & 2.61 & 98.5493 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 11021074.4900 & 2.35 & 96.2491 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11004088.4300 & 2.62 & 97.3611 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 10999027.4100 & 2.58 & 96.8508 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 11021001.9300 & 2.44 & 95.3023 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 11009952.5400 & 2.50 & 96.0952 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 11011009.4600 & 2.61 & 95.6791 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 10969735.8000 & 2.75 & 96.8783 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 10992141.5100 & 2.70 & 104.6651 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11001403.8500 & 2.61 & 108.2584 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24283029.0000 & 2.42 & 256.6622 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24295419.0000 & 2.45 & 255.5318 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 42496401.0000 & 2.17 & 276.8820 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 42454312.0000 & 2.26 & 275.5431 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 42524681.0000 & 2.19 & 291.5733 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 65724464.0000 & 1.92 & 311.0767 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 65753905.0000 & 1.83 & 303.0759 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 65892345.0000 & 1.64 & 306.4597 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 94125235.0000 & 1.58 & 314.3004 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 94163288.0000 & 1.55 & 324.7335 \\ \hline
+	\end{tabular}
+	\caption{Resultados para el algoritmo genético generacional con operador de cruce basado en posición}
+	\label{}
+	\end{center}
+\end{table}
+
+\newpage
+\subsubsection{AGG con operador de cruce uniforme}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+		\hline
+		MDG-a\_1\_n500\_m50 & 7599.7100 & 2.99 & 7.1859 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7589.6700 & 2.34 & 7.2879 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7586.2300 & 2.23 & 7.0329 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7637.7500 & 1.71 & 7.2787 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7598.8400 & 2.02 & 7.3794 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7670.3100 & 1.33 & 7.4429 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7696.2100 & 0.97 & 7.5719 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7650.0500 & 1.30 & 7.1203 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7735.8400 & 0.44 & 7.1916 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7617.1300 & 2.10 & 7.3131 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 11138998.9300 & 1.42 & 145.0090 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 11165941.8900 & 1.07 & 149.0917 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11153701.8200 & 1.29 & 154.4304 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 11144229.3900 & 1.30 & 150.2561 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 11147015.0000 & 1.32 & 147.2957 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 11119564.5900 & 1.53 & 152.2065 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 11161459.9600 & 1.28 & 151.1558 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 11109143.0300 & 1.51 & 146.3838 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 11134650.7900 & 1.44 & 151.9206 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11141441.5700 & 1.37 & 148.1965 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24608485.0000 & 1.11 & 393.2946 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24632809.0000 & 1.09 & 392.2716 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 42986288.0000 & 1.04 & 497.4414 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 42961690.0000 & 1.10 & 459.4445 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 42959967.0000 & 1.19 & 445.6626 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 66406940.0000 & 0.91 & 521.6510 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 66473974.0000 & 0.75 & 517.3427 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 66441799.0000 & 0.82 & 517.5912 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 94940170.0000 & 0.73 & 559.3752 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 94887804.0000 & 0.79 & 581.2187 \\ \hline
+	\end{tabular}
+	\caption{Resultados para el algoritmo genético generacional con operador de cruce uniforme}
+	\label{}
+	\end{center}
+\end{table}
+
+\newpage
+\subsubsection{AGE con operador de cruce basado en posición}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+		MDG-a\_1\_n500\_m50 & 7584.0100 & 3.19 & 6.6380 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7519.5400 & 3.24 & 6.5950 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7525.6100 & 3.01 & 6.4858 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7559.1700 & 2.72 & 6.7525 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7521.1500 & 3.02 & 6.4310 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7546.7500 & 2.92 & 6.4193 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7472.5300 & 3.85 & 6.4477 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7574.1800 & 2.28 & 6.5106 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7625.6900 & 1.86 & 6.6205 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7591.1900 & 2.43 & 6.4016 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 10976951.1500 & 2.86 & 98.5636 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 10970372.8900 & 2.80 & 97.9045 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11008968.4700 & 2.57 & 97.8373 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 10988903.0900 & 2.67 & 96.8395 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 10991849.5000 & 2.69 & 97.7293 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 10990358.9800 & 2.67 & 97.4258 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 10955690.4800 & 3.10 & 97.4216 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 10963812.9700 & 2.80 & 98.1521 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 10973169.1300 & 2.87 & 98.2144 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11015277.7800 & 2.49 & 97.1605 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24193096.0000 & 2.78 & 225.8768 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24202565.0000 & 2.82 & 228.9723 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 42506675.0000 & 2.14 & 251.7806 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 42500618.0000 & 2.16 & 250.6708 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 42462823.0000 & 2.33 & 252.9400 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 65843142.0000 & 1.75 & 277.9741 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 65830741.0000 & 1.72 & 280.1346 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 65788119.0000 & 1.80 & 277.2306 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 94062218.0000 & 1.64 & 302.0920 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 94007359.0000 & 1.71 & 309.6937 \\ \hline
+	\end{tabular}
+	\caption{Resultados para el algoritmo genético estacionario con operador de cruce basado en posición}
+	\label{}
+	\end{center}
+\end{table}
+
+\newpage
+\subsubsection{AGE con operador de cruce uniforme}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7596.1600 & 3.03 & 7.3520 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7601.1500 & 2.19 & 7.2460 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7504.4300 & 3.29 & 7.1593 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7660.1100 & 1.42 & 7.3927 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7541.7200 & 2.75 & 7.4196 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7596.2800 & 2.28 & 7.5483 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7671.7800 & 1.29 & 7.5733 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7607.7600 & 1.85 & 7.3822 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7621.3900 & 1.91 & 7.5032 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7639.1500 & 1.81 & 7.2798 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11063704.0100 & 2.09 & 131.2819 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11066523.8400 & 1.95 & 125.1071 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11104517.6600 & 1.73 & 129.8289 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11067495.0200 & 1.98 & 129.0687 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11078996.0600 & 1.92 & 127.6533 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11092375.3100 & 1.77 & 127.9010 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11049667.0000 & 2.26 & 123.8305 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11101019.8400 & 1.59 & 124.5623 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11067019.6800 & 2.04 & 125.0926 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11068015.0500 & 2.02 & 127.9364 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24482532.0000 & 1.61 & 310.7571 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24515288.0000 & 1.57 & 305.3671 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42854798.0000 & 1.34 & 389.7618 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42813615.0000 & 1.44 & 360.4363 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42780235.0000 & 1.60 & 350.1306 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66322030.0000 & 1.03 & 405.4928 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66216803.0000 & 1.14 & 387.8432 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66214576.0000 & 1.16 & 395.0711 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94685351.0000 & 0.99 & 455.7575 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94711478.0000 & 0.97 & 430.7895 \\ \hline
+				\end{tabular}
+				\caption{Resultados para el algoritmo genético estacionario con operador de cruce uniforme}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\newpage
+\subsubsection{AM-(10,1)}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7722.4400 & 1.42 & 0.7676 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7667.9700 & 1.33 & 0.7692 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7637.5400 & 1.57 & 0.7313 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7710.4800 & 0.77 & 0.6419 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7729.9300 & 0.33 & 0.6836 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7660.9800 & 1.45 & 0.6801 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7600.7700 & 2.20 & 0.6018 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7652.4800 & 1.27 & 0.6230 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7676.5200 & 1.20 & 0.6132 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7704.9900 & 0.97 & 0.7335 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11096533.5500 & 1.80 & 34.1228 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11124752.3000 & 1.44 & 32.3317 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11102635.1800 & 1.75 & 33.2903 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11103623.4100 & 1.66 & 30.5755 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11129061.6100 & 1.48 & 31.8156 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11124099.6000 & 1.49 & 29.8145 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11111502.1800 & 1.72 & 30.3296 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11114466.8500 & 1.47 & 31.1305 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11131466.8500 & 1.47 & 29.1715 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11136221.6300 & 1.42 & 28.7041 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24517103.0000 & 1.47 & 98.6396 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24462365.0000 & 1.78 & 90.5566 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42858685.0000 & 1.33 & 112.5296 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42846734.0000 & 1.36 & 122.6820 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42768325.0000 & 1.63 & 120.0775 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66227422.0000 & 1.17 & 155.4455 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66212307.0000 & 1.15 & 141.3751 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66233469.0000 & 1.13 & 144.2372 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94539077.0000 & 1.14 & 154.6568 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94671428.0000 & 1.02 & 153.4724 \\ \hline
+				\end{tabular}
+				\caption{Resultados para la primera versión de los algoritmos meméticos}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\newpage
+\subsubsection{AM-(10,0.1)}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7674.1600 & 2.04 & 1.6272 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7642.0900 & 1.67 & 1.4551 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7577.3900 & 2.35 & 1.6110 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7604.3900 & 2.13 & 1.5097 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7612.3600 & 1.84 & 1.5642 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7649.3800 & 1.60 & 1.5563 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7628.8100 & 1.84 & 1.6205 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7654.5600 & 1.24 & 1.8468 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7718.5400 & 0.66 & 1.6992 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7676.0400 & 1.34 & 1.7339 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11148288.0600 & 1.34 & 54.2756 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11196231.6200 & 0.80 & 58.4671 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11190341.2600 & 0.97 & 49.9339 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11189314.0100 & 0.90 & 67.4230 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11175032.0600 & 1.07 & 55.0096 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11211456.6900 & 0.72 & 52.8924 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11141507.0700 & 1.45 & 49.5905 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11179794.7500 & 0.89 & 60.4579 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11187212.9300 & 0.97 & 56.8724 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11167649.1800 & 1.14 & 46.4786 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24664724.0000 & 0.88 & 175.4363 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24657475.0000 & 1.00 & 173.2818 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43186536.0000 & 0.58 & 218.6578 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43103854.0000 & 0.77 & 200.8528 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43108976.0000 & 0.84 & 194.1992 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66673897.0000 & 0.51 & 265.6807 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66729937.0000 & 0.37 & 221.2810 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66768750.0000 & 0.33 & 271.5697 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95225625.0000 & 0.43 & 264.0697 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95265428.0000 & 0.40 & 283.2550 \\ \hline
+				\end{tabular}
+				\caption{Resultados para la segunda versión de los algoritmos meméticos}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\newpage
+\subsubsection{AM-(10,0.1mejores)}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7626.3900 & 2.65 & 1.6267 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7574.5900 & 2.54 & 1.4842 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7624.3300 & 1.74 & 1.6898 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7587.0800 & 2.36 & 1.4680 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7585.1400 & 2.19 & 1.6609 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7667.9700 & 1.36 & 1.5686 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7590.9000 & 2.33 & 1.5818 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7633.1500 & 1.52 & 1.5919 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7673.6500 & 1.24 & 1.5337 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7654.0400 & 1.62 & 1.5922 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11143376.4400 & 1.39 & 50.2011 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11124002.9300 & 1.44 & 53.8830 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11172449.3600 & 1.13 & 46.3347 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11177988.2400 & 1.00 & 58.6131 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11147166.6900 & 1.32 & 45.8337 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11173896.9900 & 1.05 & 51.3627 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11142883.3400 & 1.44 & 50.5609 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11139484.6500 & 1.24 & 45.0440 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11193433.8200 & 0.92 & 55.9717 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11190439.5100 & 0.94 & 55.3895 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24715984.0000 & 0.68 & 193.0204 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24658766.0000 & 0.99 & 173.0503 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43097761.0000 & 0.78 & 207.3779 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43107079.0000 & 0.76 & 212.5781 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43135160.0000 & 0.78 & 203.9789 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66627115.0000 & 0.58 & 239.6138 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66705078.0000 & 0.41 & 267.5730 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66651289.0000 & 0.51 & 241.3988 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95200194.0000 & 0.45 & 255.6300 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95269047.0000 & 0.39 & 256.6493 \\ \hline
+				\end{tabular}
+				\caption{Resultados para la tercera versión de los algoritmos meméticos}
+				\label{}
+				\end{center}
+			\end{table}
+			
+			\newpage
+			
+\subsection{Comparación entre los algoritmos}
+Mostramos ahora una tabla con la media de los estadísticos (desviación  y tiempo de ejecución) para cada uno de los algoritmos:
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|}
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			Greedy & 9.22 & 1.2 \\ \hline
+			BL del Primer Mejor & 1.22 & 0.55 \\ \hline
+			AGG con operador basado en posición & 2.49 & 132.14 \\ \hline
+			AGG con operador uniforme & 1.35 & 215.13 \\ \hline
+			AGE con operador basado en posición & 2.56 & 123.33 \\ \hline
+			AGE con operador uniforme & 1.80 & 171.25 \\ \hline
+			AM-(10,1) & 1.38 & 53.73 \\ \hline
+			AM-(10,0.1) & 1.10 & 94.53 \\ \hline
+			AM-(10,0.1mejores) & 1.26 & 92.66 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Comparativa de estadísticos medios obtenidos por distintos algoritmos para el MDP}
+	\label{}
+\end{table}
+
+
+	\subsection{ Análisis de los resultados }
+	
+	Para tener una visión global de los resultados obtenidos por los distintos algoritmos observamos la Tabla 10. Nos damos cuenta de que los algoritmos genéticos no consiguen superar los resultados que presenta la búsqueda local, pues esta tiene una desviación media y un tiempo de ejecución más bajo. Además el algortimo Greedy sigue siendo el peor de todos los algoritmos, pues, como ya dijimos en su momento, este no explora el espacio de soluciones con tanta profundidad como lo hacen el resto de algoritmos considerados. Por otro lado, los algoritmos meméticos ofrecen mejores desviaciones medias que los genéticos, y unos tiempos de ejecución medios también menores, uno de los cuales, AM-(10,0.1), mejora incluso los resultados de la BL. Comentamos estos aspectos con más detalle a continuación. 
+	
+	Empezamos analizando los resultados de los \textbf{algoritmos genéticos}. Notamos que tanto en el esquema estacionario como en el generacional, se obtienen mejores soluciones usando el operador de cruce uniforme que el operador de cruce basado en posición. En ambos operadores de cruce, los valores comunes de las dos soluciones padre se mantienen en el hijo, de manera que los elementos seleccionados prometedores se mantienen y, si las soluciones padre son buenas, es bastante probable que el hijo también sea una buena solución. Sin embargo, mientras que en el \underline{operador de cruce basado en posición} el resto de posiciones del hijo se rellenan con los valores restantes de un padre barajados aleatoriamente, con el \underline{operador uniforme} se introducen valores totalmente aleatorios en dichas posiciones, lo que hace que la solución no sea factible necesariamente. Se usa entonces el operador de reparación, que transforma una solución no válida en una solución factible y es gracias a este operador por el que los resultados mejoran aquí. En efecto, ya vimos que lo que hace la reparación es añadir a la solución hija, en caso de que a esta le falten elementos seleccionados, el elemento no elegido que más contribuye a esa solución, con lo que esta mejorará considerablemente. Además, en el caso de que sobren elementos en la solución, se elimina de la misma el elemento que más contribuye, lo cual, por otro lado, evita que la solución se estanque en algún óptimo local, y amplía el espacio de búsqueda. Así, las soluciones hijas con el operador de cruce uniforme serán más prometedoras y la población descendiente tendrá una mayor diversidad, es decir, se explora el espacio de soluciones en mayor profundidad. De ahí el hecho de que obtengamos mejores soluciones con este tipo de operador de cruce. 
+	
+	En cuanto al tiempo, el operador de reparación conlleva la búsqueda de los elementos que más contribuyen a la solución para cada una de las soluciones hija generadas en el cruce, y esto es costoso, por lo que es de esperar que el tiempo medio de ejecución de los algoritmos que usan este operador sea más elevado, tal y como vemos en la tabla 10.
+	
+	Por otra parte, vemos que los algoritmos \underline{genéticos estacionarios} presentan soluciones ligeramente peores que los \underline{generacionales}. Esto puede ser debido a que en el esquema estacionario en cada iteración (generación) se generan como mucho únicamente dos nuevas soluciones, que pueden o no pasar a formar parte de la población de la generación anterior (es posible incluso que la población se mantenga invariante), mientras que en el esquema generacional, en cada generación puede llegar a modificarse la población entera, de manera que la exploración de soluciones es más profunda en este último esquema. Por tanto, esto propicia que las soluciones obtenidas por el algoritmo generacional sean mejores y más diversas que las encontradas por el estacionario. Además, el esquema generacional necesita menos generaciones que el estacionario para llegar a encontrar buenas soluciones.
+	
+%	El tiempo de ejecución es ligeramente inferior en los algoritmos estacionarios, pero la diferencia no es muy grande y no merece la pena detenerse a analizar estos tiempos. 
+
+
+	Analizamos ahora las distintas versiones de los \textbf{algoritmos meméticos}. Podemos observar que estos algoritmos presentan resultados muy buenos, mejores que los algoritmos genéticos, aunque aparecen diferencias entre los resultados de las tres versiones consideradas. 
+	
+	Puesto que \underline{los algoritmos meméticos} hacen uso del AGG uniforme, que es el mejor de los algoritmos genéticos estudiados para este problema, y además mejoran las soluciones con la BL, era de esperar que estos algoritmos mejoraran los resultados de \underline{los algoritmos genéticos} en general. Además, su tiempo medio de ejecución es bastante inferior, ya que en la BL la evaluación de las soluciones (que es lo más costoso de los algoritmos) se hace de forma factorizada, y esta lleva a cabo gran parte de las evaluaciones totales, como ahora comentaremos. 
+	
+	La versión que ofrece una desviación media más alta es la \underline{primera}, donde se aplica la búsqueda local a todas las soluciones de la población obtenida cada 10 generaciones. Este hecho es debido a que en el algoritmo genético sólo se generan 51 poblaciones (contando la primera generada aleatoriamente). En efecto, como cada 10 generaciones se usa BL sobre cada solución durante un máximo de 400 evaluaciones de la función objetivo, al disponer de 50 soluciones en cada población, se llevarán a cabo 20000 evaluaciones en la búsqueda local, lo cual supone $\frac{1}{5}$ del límite de evaluaciones. Es decir, cada 10 generaciones se realiza un quinto del número total de evaluaciones, lo cual nos lleva a las 50 poblaciones generadas. De esta forma, no hay un buen equilibrio entre exploración y explotación, pues hay una gran explotación por parte de la búsqueda local (que se aplica sobre todas las soluciones) y la exploración llevada a cabo por el algoritmo genético (búsqueda global) es muy pequeña. Esto da lugar a que las soluciones queden atrapadas en óptimos locales, y que, por tanto, sean peores, ya que la exploración del espacio total de soluciones se ve disminuida. 
+	
+	El hecho explicado también da lugar a que la primera versión de los algoritmos meméticos sea la más rápida, pues un quinto de las evaluaciones totales de la función fitness se realizan de manera factorizada en la búsqueda local, y, por lo tanto, más rápida que en el algoritmo genético. 
+	
+	Notamos que esta versión no mejora (las otras dos sí) la desviación obtenida por el algoritmo AGG uniforme, que era la menor de los algoritmos genéticos, a pesar de incluir al mismo. Esto puede ser debido a la poca profundidad de exploración de esta versión del algoritmo memético frente al genético uniforme, que sí genera más poblaciones y por tanto explora más el espacio de búsqueda. En cambio, sí que supera las desviaciones medias del resto de algoritmos genéticos, por los motivos ya comentados. 
+	
+	En la \underline{segunda y tercera versión} de los algoritmos meméticos, se generan un total de 431 poblaciones (incluyendo la población aleatoria inicial), ya que sólo se aplica la búsqueda local a\\ $0.1\times size\_pop=0.1\times 50 = 5$ soluciones cada 10 generaciones. Por lo tanto, en estos casos hay un mayor equilibrio entre exploración y explotación, siendo la exploración del espacio de soluciones en estas versiones mayor que en la versión primera. De ahí que la desviación media proporcionada por estas dos variantes sea mejor que la de la primera. 
+	
+	Por otro lado, notamos que la segunda variante presenta un mejor resultado que la tercera. Esto se debe a que en la tercera versión sólo se mejoran con BL las mejores soluciones de la población, con lo que estas pueden caer en óptimos locales y llegar a un punto donde la búsqueda local no las pueda mejorar más. En cambio, la segunda versión mejora con BL cualquier solución aleatoria, tanto buenas como malas soluciones, luego las soluciones malas tienen una mayor probabilidad de ser mejoradas. Así se obtienen soluciones más diversas, se lleva a cabo una mayor exploración del espacio de soluciones y se evita que las mejores soluciones se queden atrapadas en óptimos locales y no se pueda seguir explorando su entorno, que podría ser prometedor. Sin embargo, cuando se encuentra un óptimo local bueno, la solución puede ser adecuada y la convergencia a ese óptimo se produciría bastante rápido gracias a la aplicación de la búsqueda local sólo a las mejores soluciones. 
+	
+	Estas dos últimas versiones tienen un tiempo medio de ejecución parecido y mayor al de la primera versión, pues ahora se llevan a cabo en la búsqueda local muchas menos evaluaciones que antes (aunque siguen siendo bastantes), siendo una gran parte de las soluciones evaluadas por el algoritmo genético, que es más lento. Dado que en la tercera versión se tienen que ordenar las soluciones de la población según su fitness, su tiempo medio de ejecución debería ser algo más elevado, pero no es el caso (por ejemplo porque el ordenador tuviera menos carga cuando se ejecutó este algoritmo, por la función \lstinline|sort()| usada para llevar a cabo la ordenación, etc).
+	
+	Finalmente, comparamos todos estos nuevos algoritmos implementados en la práctica 2 con \textbf{la búsqueda local}. Podemos ver en la Tabla 10 que sólo la segunda versión de los algoritmos meméticos consigue mejorar la desviación media que presenta la búsqueda local. El resto de algoritmos tienen una desviación media mayor que la BL. 
+	
+	Los algoritmos genéticos llevan a cabo una exploración global del espacio de soluciones, mientras que la búsqueda local, como su nombre indica, sólo explora locamente el entorno de las soluciones. Así, con la búsqueda local se pueden llegar a mejorar bastante las soluciones de partida, mientras que con los algoritmos genéticos se va saltando de un sitio a otro del espacio, sin llegar a explotar lo suficiente el entorno de las soluciones, lo cual hace que estos puedan quedar atascados en soluciones no muy buenas. Como la exploración con los algoritmos genéticos es más profunda, quizás necesitan un mayor número de iteraciones para converger a una solución tan buena como la encontrada por BL. La convergencia en la BL a una solución buena es más rápida que en los algortimos genéticos. 
+	
+	Al incluir la búsqueda local en los algoritmos genéticos, se aumenta la explotación del entorno de las soluciones, lo cual hace que se puedan llegar a encontrar soluciones buenas más rápidamente, de manera que los algoritmos meméticos encuentran mejores soluciones en general que los genéticos, como ya hemos comentado. La segunda versión de los meméticos presenta un buen equilibrio entre exploración global del entorno, gracias al algoritmo genético, y explotación, gracias a la búsqueda local. Así, lleva a cabo una exploración del entorno más amplia que la BL y es por ello que este algoritmo consigue mejorar la desviación media ofrecida por BL. 
+	
+	Respecto al tiempo medio de ejecución, la búsqueda local es muchísimo más rápida que todos los algoritmos genéticos y meméticos. Esto es debido principalmente al hecho, ya comentado, de que la evaluación de las soluciones en la BL se hace de forma factorizada, mientras que en los algoritmos genéticos se calcula el fitness de cada solución completa, y es aquí donde se necesita el mayor tiempo. Además, al usar representación binaria de las soluciones en los algoritmos genéticos, para recorrer las soluciones hay que iterar sobre un vector de longitud mucho mayor que en la búsqueda local, donde la representación es con enteros y las soluciones tienen longitud $ m $ (frente a $ n $ en la representación binaria).
+	
+	Queda claro entonces que una estrategia de tipo evolutivo en nuestro problema quizás no merece mucho la pena, pues obtenemos tiempos de ejecución mucho mayores y no se consigue mejorar las soluciones en general. Sin embargo, puede que para otros problema, otros conjuntos de datos mayores y un límite de evaluaciones mayor, este tipo de algoritmos ofrezcan mejores resultados que la BL, pero no es nuestro caso. Si lo que se busca es obtener las mejores soluciones y el tiempo no es un factor importante, una buena estrategia a seguir sería hacer uso de los algoritmos meméticos, buscando un buen equilibrio entre exploración y explotación que permita mejorar los resultados, tal y como hemos explicado. 
+	
+\newpage
+\section{Algoritmos extra}
+\subsection{AGG con operador de cruce uniforme modificado}
+
+Como primera modificación de los algoritmos estudiados, vamos a considerar el algoritmo genético generacional con operador de cruce uniforme. Lo que haremos es cambiar la función de reparación usada en el operador de cruce para que, si sobran elementos seleccionados en la solución generada, en vez de eliminar el elemento que más contribuye a la solución se elimine el que menos contribuye, dando lugar así a soluciones más prometedoras. El pseudocódigo del nuevo operador de reparación es prácticamente el mismo que el del operador antiguo, quedando como sigue: 
+
+\begin{algorithm}[H]
+	\caption{ \sc repair}
+	\KwIn{solución \textit{sol}, tamaño de una solución $ m $, \textit{matrix} de distancias}
+	\KwOut{solución $sol$ reparada }
+	\Begin{
+		selected $\leftarrow$ nº de posiciones con valor true en \textit{sol}
+		
+		\While{$ selected>m $}{
+			$min\_pos \leftarrow$ posición de $ sol $ con valor $ true $ de menor contribución\\
+			sol[min\_pos]$\leftarrow$ false\\
+			selected - -
+		}
+		
+		\While{$ selected<m $}{
+			$max\_pos \leftarrow$ posición de $ sol $ con valor $ false $ que más contribuiría a la solución\\
+			sol[max\_pos]$\leftarrow$ true\\
+			selected ++
+		}
+		\Return sol
+	}
+\end{algorithm}
+
+Al aplicar este nuevo algoritmo con el operador de reparación modificado, los resultados que obtenemos son los siguientes: 
+ 
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7670.83 & 2.08 & 6.877278 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7627.58 & 1.85 & 6.943295 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7564.49 & 2.51 & 6.660707 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7716.84 & 0.69 & 6.865681 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7625.28 & 1.68 & 6.703208 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7618.7 & 1.99 & 6.668023 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7546.63 & 2.90 & 6.814342 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7616.9 & 1.73 & 6.973793 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7640.99 & 1.66 & 6.741009 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7641.31 & 1.79 & 6.763375 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11197487.25 & 0.91 & 132.438107 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11154821.81 & 1.17 & 131.047321 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11184296.84 & 1.02 & 134.339525 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11176067.62 & 1.02 & 130.073282 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11143099.54 & 1.35 & 133.95065 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11191251.7 & 0.89 & 133.005439 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11178058.86 & 1.13 & 136.016861 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11145015.08 & 1.20 & 130.780709 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11154197.47 & 1.27 & 128.175937 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11186315.9 & 0.97 & 130.798987 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24651168 & 0.94 & 338.496244 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24660725 & 0.98 & 347.561528 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43148965 & 0.66 & 387.585997 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43136394 & 0.69 & 393.055177 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43212255 & 0.61 & 396.471386 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66716093 & 0.44 & 455.939878 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66608718 & 0.55 & 415.73203 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66662601 & 0.49 & 444.644123 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95291574 & 0.36 & 509.55044 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95179741 & 0.48 & 516.911111 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AGG con operador de cruce uniforme modificado}
+				\label{}
+				\end{center}
+			\end{table}
+		
+		\begin{table}[H]
+			\begin{center}
+				\begin{tabular}{|l|c|c|}
+					\hline
+					\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					BL del Primer Mejor & 1.22 & 0.55 \\ \hline
+					AGG con operador uniforme & 1.35 & 215.13 \\ \hline
+					AGG con operador uniforme modificado & 1.20 & 186.49 \\ \hline
+				\end{tabular}
+			\end{center}
+			\caption{Comparativa de estadísticos medios obtenidos por distintos algoritmos para el MDP}
+			\label{}
+		\end{table}
+			
+Podemos observar que la desviación típica media mejora con respecto al otro operador de reparación, incluso supera ligeramente a la búsqueda local.  Esto es debido a que en el operador de reparación se mejoran todas las soluciones que no son facitibles, eliminando el peor elemento o añadiendo el mejor, mientras que en el caso anterior podíamos llegar a empeorar las soluciones si se eliminaba el elemento que más contribuía a la solución. Al mejorar las soluciones, estamos incluyendo información del entorno de las mismas, de forma parecida a como lo hace la búsqueda local, aumentando por lo tanto la explotación del entorno de las soluciones en el algoritmo genético. Así, las soluciones de las poblaciones hijas serán mejores que las obtenidas con el antiguo operador de reparación. Podría ser que de esta forma perdiéramos diversidad en las soluciones y fuera más probable quedarse estancado en un óptimo local, pero nos damos cuenta de que no es un problema, pues aquí no se mejora la solución completa como en la búsqueda local quedándonos con la mejor del entorno, sino que solamente se le añade o elimina el elemento más adecuado en cada caso.
+
+En cuanto al tiempo de ejecución, debería ser el mismo en ambos reparadores, pues simplemente se busca el elemento que más o que menos contribuye, lo cual tiene el mismo coste. La diferencia en los tiempos puede ser debida, por ejemplo, a la carga del ordenador en el momento de la ejecución.  
+
+\subsection{AG-Pos con selección por torneo de tamaño 3}
+
+Consideramos ahora los algoritmos genéticos con operador de cruce basado en posición y una estrategia de selección por torneo de tamaño 3, a diferencia del torneo binario que venimos usando hasta ahora. 
+
+La única modificación en la implementación de estos algoritmos es entonces la función que lleva a cabo el torneo, que quedaría como sigue: 
+\\
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc TernaryCompetition} }
+	\KwIn{Población \textit{pop}}
+	\KwOut{Posición en la población de la solución con mayor fitness de entre tres elegidas aleatoriamente}
+	\Begin{		
+		rands $\leftarrow \emptyset$ \tcp*{Vector de números aleatorios}
+		best\_fitness $\leftarrow$ 0  \tcp*{Mejor fitness encontrado en las soluciones elegidas}
+		\For{$ i \in [0,3) $}{
+		rands $\leftarrow rands \cup$ $ \{ $número aleatorio en $[0,size\_pop)\}$\\
+		\If{pop[rands[i]].fitness $ > $ best\_fitness}{
+		best\_fitness $\leftarrow$ pop[rands[i]].fitness \\
+		best\_pos $\leftarrow$ rands[i]\\
+		}
+	}
+		\Return best\_pos
+	}
+\end{algorithm}
+
+Notemos que esta función podría cambiarse para obtener un torneo de cualquier tamaño, simplemente cambiando el 3 por el tamaño deseado. 
+
+Usamos esta nueva estrategia de selección tanto en el esquema generacional como en el estacionario y los resultados obtenidos han sido los siguientes:
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					\hline
+					MDG-a\_1\_n500\_m50 & 7545.96 & 3.67 & 9.191111 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7550.21 & 2.85 & 8.887951 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7530.63 & 2.95 & 8.807654 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7552.63 & 2.80 & 9.93795 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7597.96 & 2.03 & 8.902931 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7587.97 & 2.39 & 9.11007 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7524.53 & 3.18 & 8.806744 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7553.94 & 2.54 & 9.514392 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7604.87 & 2.13 & 9.424579 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7609.03 & 2.20 & 9.421083 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11038817.09 & 2.31 & 142.971788 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11025787.57 & 2.31 & 122.799947 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11019831.79 & 2.48 & 113.369495 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 10988812.31 & 2.68 & 114.905014 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11020558.9 & 2.44 & 120.705959 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11010339.81 & 2.50 & 122.609482 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11047254.31 & 2.29 & 121.711127 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11027101.55 & 2.24 & 116.459197 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11040806.3 & 2.27 & 126.288953 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 10978083.01 & 2.82 & 118.154906 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24306954 & 2.32 & 284.28966 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24312000 & 2.38 & 249.065336 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42584567 & 1.96 & 273.333283 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42575129 & 1.99 & 277.347906 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42637461 & 1.93 & 277.229978 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 65896122 & 1.67 & 298.819363 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 65842012 & 1.70 & 298.331112 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 65905082 & 1.62 & 305.36861 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94246603 & 1.45 & 331.271994 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94125103 & 1.59 & 328.069765 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AGG con operador de cruce basado en posición y  torneo de tamaño 3}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7517.01 & 4.04 & 6.175289 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7550.09 & 2.85 & 6.392706 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7613.57 & 1.88 & 6.393504 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7454.46 & 4.06 & 6.539565 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7567.45 & 2.42 & 6.18279 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7558.2 & 2.77 & 6.5125 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7523.2 & 3.20 & 6.112938 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7506.01 & 3.16 & 6.215489 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7600.47 & 2.18 & 6.172668 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7559.58 & 2.84 & 6.103371 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 10981495.99 & 2.82 & 94.098611 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11001285.96 & 2.53 & 93.097359 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11012018.42 & 2.55 & 95.828485 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11025219.82 & 2.35 & 93.02934 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11006108.76 & 2.57 & 92.209933 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 10999599.72 & 2.59 & 94.014263 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11031343.3 & 2.43 & 93.193665 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 10986255.21 & 2.60 & 94.779364 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 10996816.08 & 2.66 & 93.525412 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 10960514.28 & 2.97 & 93.040551 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24276498 & 2.44 & 216.521896 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24233822 & 2.70 & 219.760588 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42487194 & 2.19 & 241.821356 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42499354 & 2.16 & 240.105493 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42510291 & 2.22 & 242.117392 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 65840571 & 1.75 & 268.763779 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 65802515 & 1.76 & 262.91381 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 65871801 & 1.67 & 265.624341 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94093687 & 1.61 & 283.989535 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94095250 & 1.62 & 286.013736 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AGE con operador de cruce basado en posición y torneo con tamaño 3}
+				\label{}
+				\end{center}
+			\end{table}
+		
+		\begin{table}[H]
+			\begin{center}
+				\begin{tabular}{|l|c|c|}
+					\hline
+					\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					AGG-Pos & 2.49 & 132.14 \\ \hline
+					AGG-Pos con selección por torneo de tamaño 3 & 2.32 & 141.17 \\ \hline
+					AGE-Pos & 2.56 & 123.33 \\ \hline
+					AGE-Pos con selección por torneo de tamaño 3 & 2.52 & 117.57 \\ \hline
+				\end{tabular}
+			\end{center}
+			\caption{Comparativa de estadísticos medios}
+			\label{}
+		\end{table}
+			
+Nos damos cuenta de que las desviaciones medias mejoran ligeramente con esta nueva estrategia, pero la diferencia no es muy grande. Si nos fijamos en las tablas 12 y 3, por ejemplo, vemos que para algunos casos, como el primero y el último, el torneo binario presenta una menor desviación que el 'ternario', y para otros casos, como MDG-a-5 y MDG-c-8, es el ternario el que encuentra mejores soluciones. 
+
+Al aumentar el tamaño del torneo, lo que hacemos es poner más presión selectiva, de manera que sólo los individuos relativamente buenos tienen posibilidades de ser elegidos para el cruce (los dos peores nunca serán elegidos si el tamaño es 3), habiendo así una mayor influencia del elitismo. Esto disminuiría la diversidad de las generaciones posteriores, limitando más la exploración del espacio. Sin embargo, vemos que al dar una mayor oportunidad de reproducción a los individuos mejores, las soluciones mejoran en algunos casos, pues puede que aquí se encuentren zonas 'buenas' del espacio y al centrar ahí la búsqueda se llega a soluciones mejores. 
+
+La diferencia, sin embargo, entre las dos estrategias no es muy significativa, aunque es posible que si se aumentara aún más la presión selectiva la diferencia se hiciera más notoria. Habría que encontrar un tamaño de torneo adecuado para cada caso. 
+
+Los tiempos medios de ejecución son parecidos en todos los casos, por lo que el tamaño del torneo no afecta demasiado al tiempo de ejecución. 
+\subsection{AGG con operador de cruce basado en posición modificado}
+
+En esta ocasión modificamos el cruce, de manera que siempre es la mejor solución de la población actual la que se cruza con una solución aleatoria de la población seleccionada y el hijo sustituye a esa solución aleatoria. De esta forma garantizamos que en la población hija va a haber algunas soluciones parecidas a la mejor solución de la población (tendrán valores en común con la misma), conservando así las selecciones prometedoras de la mejor solución en las poblaciones descendientes. El pseudocódigo para el cruce sería el siguiente: 
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc cross} }
+	\KwIn{Población \textit{pop}, probabilidad de cruce por pareja $cross\_prob$}
+	\Begin{
+		num\_cross $\leftarrow cross\_prob \times pop.size()/2$ \tcp*{Número esperado de cruces}
+		\ForEach{$ i \in \{0,...,num\_cross-1\} $}{
+			updateBest(pop) \tcp*{Se actualiza la mejor solución de la población pop}
+			sol $\gets \operatorname{positionalCross}(pop.solutions[pop.best\_sol],pop.solutions[2i])$\\
+			$pop.solutions[2i]\gets$ sol \\
+		}
+	}
+\end{algorithm}
+
+Notamos que ahora sólo se genera un hijo como resulado de cada cruce, por lo que habrá menos soluciones hijas en la población descendiente. 
+
+Como las soluciones en la población seleccionada tienen posiciones aleatorias, en lugar de la posición 2i podríamos haber elegido la posición i en cada caso como segunda solución padre, pero esto no influiría en los resultados, por lo que se toma esa posición por similitud con el cruce usado en las otras versiones. 
+
+Los resultados obtenidos se muestran a continuación:
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7628.63 & 2.62 & 8.84832 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7577.52 & 2.50 & 9.012987 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7545.23 & 2.76 & 8.407234 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7650.27 & 1.54 & 8.763967 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7494.75 & 3.36 & 8.104967 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7565.79 & 2.67 & 8.307673 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7637.2 & 1.73 & 8.898012 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7651.5 & 1.28 & 8.403199 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7654.2 & 1.49 & 8.693488 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7570.01 & 2.70 & 9.161015 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11063133.82 & 2.10 & 135.161278 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11077643.48 & 1.85 & 115.267638 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11071537.47 & 2.02 & 118.135294 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11079430.97 & 1.87 & 107.786727 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11116054.38 & 1.59 & 108.000094 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11085635.31 & 1.83 & 120.490777 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11100802.76 & 1.81 & 114.916376 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11082809.4 & 1.75 & 114.004996 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11042428.96 & 2.26 & 118.649995 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11051476.44 & 2.17 & 113.759387 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24399734 & 1.95 & 264.431763 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24414094 & 1.97 & 243.683412 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42767463 & 1.54 & 262.149503 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42755035 & 1.57 & 262.957088 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42778424 & 1.61 & 261.529897 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66204849 & 1.21 & 280.913845 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66199775 & 1.16 & 282.926002 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66195205 & 1.19 & 289.012164 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94512280 & 1.17 & 330.327593 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94675696 & 1.01 & 306.29762 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AGG con operador de cruce basado en posición modificado}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|}
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			AGG-Pos & 2.49 & 132.14 \\ \hline
+			AGG-Pos con selección por torneo de tamaño 3 & 2.32 & 141.17 \\ \hline
+			AGG con operador posicional modificado & 1.88 & 134.17 \\ \hline
+			AGG con operador uniforme & 1.35 & 215.13 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Comparativa de estadísticos medios}
+	\label{}
+\end{table}
+
+Nos damos cuenta de que esta modificación presenta resultados buenos, mejorando las soluciones que ofrecen los otros algoritmos genéticos generacionales que usan el cruce basado en posición, pero no llega a superar al algoritmo que usa el operador de cruce uniforme. 
+
+Este hecho se debe a que las soluciones de las poblaciones hijas van a tener elementos seleccionados buenos, al ser siempre la mejor solución de la población la que toma parte en el cruce. Así, las soluciones mejoran considerablemente y en cada generación se producirán soluciones aún mejores, al ir añadiéndose en cada caso las posiciones prometedoras a las soluciones. Cabe notar que eso no disminuye la diversidad de la población tanto como sería de esperar, pues, debido a que la probabilidad de cruce es de 0.7, no serán todas las soluciones de las poblaciones descendientes hijas de la mejor solución. Además, el hecho de que la mejor solución se cruce con cualquier otra aleatoria, también introduce diversidad. 
+
+El tiempo de ejecución es parecido para todos los AGG con operador de cruce basado en posición, lo cual era de esperar.  
+
+
+\subsection{AM-(1,0.1)}
+
+Modificamos la segunda versión estudiada de los aloritmos meméticos, aplicando ahora la búsqueda local en todas las generaciones a 5 individuos elegidos aleatoriamente. Así, el pseudocódigo es exactamente el mismo que el ya explicado para AM-(10,0.1), salvo porque la sentencia $ if $ desaparece. En las siguientes tablas aparecen los resultados obtenidos con esta modificación:
+
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7762.53 & 0.91 & 0.80711 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7699.98 & 0.92 & 0.670934 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7722.91 & 0.47 & 0.858086 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7767.03 & 0.04 & 0.741739 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7670.8 & 1.09 & 0.742876 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7703.83 & 0.90 & 0.642476 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7706.45 & 0.84 & 1.015232 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7655.59 & 1.23 & 0.891856 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7744.74 & 0.33 & 0.728914 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7672.34 & 1.39 & 0.702153 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11188569.29 & 0.99 & 40.293898 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11137593.79 & 1.32 & 38.852803 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11136582.07 & 1.45 & 39.225565 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11150532.89 & 1.24 & 28.277517 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11170802.06 & 1.11 & 40.17034 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11175202.48 & 1.04 & 34.731421 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11185140.53 & 1.07 & 28.693629 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11133082.23 & 1.30 & 36.323246 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11168654.5 & 1.14 & 35.368849 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11189369.65 & 0.95 & 37.397898 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24589833 & 1.18 & 105.137038 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24530311 & 1.51 & 100.958068 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43015330 & 0.97 & 131.437467 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42940727 & 1.14 & 151.285856 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42997116 & 1.10 & 145.157449 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66480455 & 0.80 & 142.888046 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66548597 & 0.64 & 150.212986 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66562362 & 0.64 & 169.677096 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95028625 & 0.63 & 140.609118 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95030894 & 0.64 & 161.111014 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AM-(1,0.1) }
+				\label{}
+				\end{center}
+			\end{table}
+
+		\begin{table}[H]
+			\begin{center}
+				\begin{tabular}{|l|c|c|}
+					\hline
+					\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					BL del Primer Mejor & 1.22 & 0.55 \\ \hline
+					AM-(10,1) & 1.38 & 53.73 \\ \hline
+					AM-(10,0.1) & 1.10 & 94.53 \\ \hline
+					AM-(1,0.1) & 0.97 & 58.85 \\ \hline
+					AM-(10,0.1mejores) & 1.26 & 92.66 \\ \hline
+				\end{tabular}
+			\end{center}
+			\caption{Comparativa de estadísticos medios}
+			\label{}
+		\end{table}
+	
+Vemos que la desviación media obtenida es muy pequeña con este algoritmo, es de sólo 0.97, superando así a todas las otras versiones de los algoritmos meméticos y a la búsqueda local. En la tabla 15 podemos ver que para todos los casos las desviaciones con respecto al óptimo son bastante pequeñas y en ningún caso se supera el 1.5. 
+
+Al aplicar la búsqueda local en todas las generaciones, la influencia de la misma es bastante significativa, y ya hemos visto que la búsqueda local nos da buenos resultados. Se van mejorando 5 soluciones de todas las poblaciones, que pueden ser buenas o malas, dando oportunidad a todas las soluciones a ser mejoradas por la búsqueda local, pudiendo ser la misma solución mejorada varias veces. Así, se explota el entorno de algunas soluciones en todas las generaciones, lo que, junto a la exploración global llevada a cabo por el algoritmo genético, hace que esta nueva versión ofrezca muy buenos resultados. 
+
+El tiempo de ejecución también se ve disminuido, pues al aplicar BL con más frecuencia, se llevan a cabo más evaluaciones de la función objetivo dentro de la misma de manera factorizada, siendo por tanto el cálculo del fitness de las soluciones más rápido y disminuyéndose así el tiempo total de ejecución. 
+
+\subsection{AM-(10,0.1peores)}
+
+En este caso cambiamos la tercera versión de los algoritmos meméticos, aplicando la búsqueda local a las 5 peores soluciones de la población en lugar de a las 5 mejores, para lo cual simplemente hay que ordenar las soluciones de menor a mayor fitness y escoger las 5 primeras. Los resultados obtenidos han sido los siguientes: 
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			\hline
+					MDG-a\_1\_n500\_m50 & 7684.96 & 1.90 & 1.982638 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7610.8 & 2.07 & 1.805557 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7617.22 & 1.83 & 2.387658 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7642.69 & 1.64 & 2.024255 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7611.9 & 1.85 & 2.031721 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7732.61 & 0.53 & 1.987931 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7671.88 & 1.28 & 1.729454 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7644.34 & 1.37 & 2.103747 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7670.47 & 1.28 & 1.934887 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7658.4 & 1.57 & 1.904369 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11191628.16 & 0.96 & 71.260824 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11191593.25 & 0.84 & 64.267928 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11185087.13 & 1.02 & 66.437607 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11199050.05 & 0.81 & 87.90317 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11198344.76 & 0.87 & 59.748716 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11220821.5 & 0.63 & 72.00934 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11183620.59 & 1.08 & 76.289367 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11140101.78 & 1.24 & 75.998972 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11195670.8 & 0.90 & 82.044276 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11162823.77 & 1.18 & 61.928646 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24703801 & 0.72 & 229.183004 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24646462 & 1.04 & 216.916618 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43063760 & 0.86 & 251.668098 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43128555 & 0.71 & 289.513087 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43115644 & 0.83 & 255.694975 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66628054 & 0.58 & 265.158416 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66623677 & 0.53 & 276.959503 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66539792 & 0.68 & 272.988358 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95181690 & 0.47 & 334.672693 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95171504 & 0.49 & 300.528017 \\ \hline
+				\end{tabular}
+				\caption{Resultados para AM-(10,0.1peores) }
+				\label{}
+				\end{center}
+			\end{table}
+		
+			\begin{table}[H]
+			\begin{center}
+				\begin{tabular}{|l|c|c|}
+					\hline
+					\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					BL del Primer Mejor & 1.22 & 0.55 \\ \hline
+					AM-(10,1) & 1.38 & 53.73 \\ \hline
+					AM-(10,0.1) & 1.10 & 94.53 \\ \hline
+					AM-(1,0.1) & 0.97 & 58.85 \\ \hline
+					AM-(10,0.1mejores) & 1.26 & 92.66 \\ \hline
+					AM-(10,0.1peores) & 1.06 & 114.37 \\ \hline
+				\end{tabular}
+			\end{center}
+			\caption{Comparativa de estadísticos medios}
+			\label{}
+		\end{table}
+
+Notamos que esta idea de aplicar la BL a las peores soluciones nos da muy buenos resultados, mejorando a casi todas las versiones de los algoritmos meméticos (menos la del apartado anterior por aplicarse allí BL con mayor frecuencia que en este caso) y a la búsqueda local. Al explotar el entorno de las peores soluciones con BL, le damos una oportunidad a las mismas para mejorar, pues alrededor de ellas también puede haber óptimos buenos, que en el caso anterior era más complicado alcanzar. Si se mejoraban sólo las mejores soluciones, como ya comentamos, podía llegar un punto en el que estas no mejorasen más por haber caído en un óptimo local. Sin embargo, el aplicarla a las peores, es una garantía de que estas van a mejorar casi siempre, de manera que la búsqueda local siempre va a ser efectiva. De esta forma se obtiene también una mayor diversidad de la población que en AM-(10,0.1mejores), pudiendo explorarse el entorno más profundamente y evitando los óptimos locales. 
+
+Podemos ver que esta nueva versión tarda algo más de tiempo en ejecutarse, lo cual podríamos decir que no es debido al algoritmo, pues la única diferencia es que las soluciones se ordenan ahora en orden creciente del fitness en vez de decreciente, luego los tiempos de ejecución deberían ser iguales. 
+
+\subsection{Tabla comparativa de todos los algoritmos}
+
+Por último, mostramos una tabla resumen, con los valores medios de las desviaciones y los tiempos medios de ejecución de todos los algoritmos estudiados en esta práctica: 
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|}
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			Greedy & 9.22 & 1.2 \\ \hline
+			BL del Primer Mejor & 1.22 & 0.55 \\ \hline
+			AGG-Pos & 2.49 & 132.14 \\ \hline
+			AGG-Pos con selección por torneo de tamaño 3 & 2.32 & 141.17 \\ \hline
+			AGG con operador posicional modificado & 1.88 & 134.17 \\ \hline
+			AGG con operador uniforme & 1.35 & 215.13 \\ \hline
+			AGG con operador uniforme modificado & 1.20 & 186.49 \\ \hline
+			AGE-Pos & 2.56 & 123.33 \\ \hline
+			AGE-Pos con selección por torneo de tamaño 3 & 2.52 & 117.57 \\ \hline
+			AGE con operador uniforme & 1.80 & 171.25 \\ \hline
+			AM-(10,1) & 1.38 & 53.73 \\ \hline
+			AM-(10,0.1) & 1.10 & 94.53 \\ \hline
+			AM-(1,0.1) & 0.97 & 58.85 \\ \hline
+			AM-(10,0.1mejores) & 1.26 & 92.66 \\ \hline
+			AM-(10,0.1peores) & 1.06 & 114.37 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Comparativa de estadísticos medios obtenidos por distintos algoritmos para el MDP}
+	\label{}
+\end{table}
+\end{document}

@@ -541,27 +541,23 @@ void IntToBin(const solution &sol, solution_bin &sol_bin, int size){
     sol_bin.evaluated=true;
 }
 
-bool order(const pair<double,int> &ele1, const pair<double,int> &ele2){
-    return ele1.first > ele2.first;
-}
 
-/* Implementa un algoritmo memético usando el algoritmo genético generacional 
-    con operador de cruce uniforme y aplicando búsqueda local a las 0.1 * size_pop 
-    mejores soluciones de la población obtenida cada 10 generaciones.
+/*  Implementa un algoritmo memético usando el algoritmo genético generacional 
+    con operador de cruce uniforme y aplicando búsqueda local a las soluciones de 
+    la población obtenida en cada generación con una probabilidad de 0.1.
     Imprime por pantalla el fitness de la mejor solución de la población encontrada,
     así como el tiempo de ejecución del algorimo en segundos, el número de poblaciones generadas
     y el número de evaluaciones de la función fitness. */
-void AM3(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
+void AM2(const vector<vector<double> > &matrix, const unsigned int &num_sel, const int &seed){
     clock_t start, total;
     int evaluations=0, size_pop=50;
     double mut_prob=0.1, cross_prob=0.7;
     int generations=1;
-    int num_local=0.1*size_pop; //Número de soluciones a las que aplicarle búsqueda local
+    int num_local=0.1*size_pop;
     population new_pop, old_pop;
     solution_bin best_sol;
-    vector<pair<double,int>> solutions;
-    pair<double,int> sol;
-    solution aux;
+    solution sol;
+    int rand_pos;
 
     srand(seed);    //Fijamos la semilla
 
@@ -574,24 +570,13 @@ void AM3(const vector<vector<double> > &matrix, const unsigned int &num_sel, con
         cross(new_pop,cross_prob,num_sel,matrix);
         mutation(new_pop,mut_prob,matrix);
         evaluatePopulation(new_pop,matrix,evaluations);
-        if(generations%10==0){
-            for(unsigned i=0;i<new_pop.solutions.size();i++){
-                sol.first=new_pop.solutions[i].fitness;
-                sol.second=i;
-                solutions.push_back(sol);
+        for(unsigned i=0;i<num_local and evaluations<100000;i++){
+                rand_pos=rand()%new_pop.solutions.size();  //Posición aleatoria de una solución
+                BinToInt(new_pop.solutions[rand_pos],sol);
+                localSearch(matrix,sol,evaluations,num_sel,seed);
+                IntToBin(sol,new_pop.solutions[rand_pos],matrix.size());
             }
-            
-            //Ordenamos las soluciones de la población de mayor a menor fitness
-            sort(solutions.begin(),solutions.end(),order);
-            
-            for(unsigned j=0;j<num_local and evaluations <100000;j++){
-                BinToInt(new_pop.solutions[solutions[j].second],aux);
-                localSearch(matrix,aux,evaluations,num_sel,seed);
-                IntToBin(aux,new_pop.solutions[solutions[j].second],matrix.size());
-            }
-            updateBest(new_pop);
-            solutions.clear();
-        } 
+        updateBest(new_pop);
         replace(old_pop,new_pop,matrix);
         generations++;
     }
@@ -613,5 +598,5 @@ int main(int argc, char *argv[]){
     readInput(matrix);
 
     //Ejecutamos el algoritmo
-    AM3(matrix,num_sel,seed);
+    AM2(matrix,num_sel,seed);
 }

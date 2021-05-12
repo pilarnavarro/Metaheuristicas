@@ -206,7 +206,7 @@ void localSearch(const vector<vector<double> > &matriz, const unsigned int &num_
 
         unsigned k;
         //Intercambiamos el elemento que menos contribuye por todos los posibles hasta que se poroduzca una mejora
-        for(k = 0 ; k < valid_elements.size() and mejora == false ; k++){
+        for(k = 0 ; k < valid_elements.size() and mejora == false and num_eval<100000; k++){
             new_elem=valid_elements[k];  
             mejora = improvement(sol,min_contrib.first,min_contrib.second,new_elem,matriz);                                                                                        
             num_eval++;

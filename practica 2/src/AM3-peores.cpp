@@ -542,12 +542,12 @@ void IntToBin(const solution &sol, solution_bin &sol_bin, int size){
 }
 
 bool order(const pair<double,int> &ele1, const pair<double,int> &ele2){
-    return ele1.first > ele2.first;
+    return ele1.first < ele2.first;
 }
 
 /* Implementa un algoritmo memético usando el algoritmo genético generacional 
     con operador de cruce uniforme y aplicando búsqueda local a las 0.1 * size_pop 
-    mejores soluciones de la población obtenida cada 10 generaciones.
+    peores soluciones de la población obtenida cada 10 generaciones.
     Imprime por pantalla el fitness de la mejor solución de la población encontrada,
     así como el tiempo de ejecución del algorimo en segundos, el número de poblaciones generadas
     y el número de evaluaciones de la función fitness. */
@@ -581,7 +581,7 @@ void AM3(const vector<vector<double> > &matrix, const unsigned int &num_sel, con
                 solutions.push_back(sol);
             }
             
-            //Ordenamos las soluciones de la población de mayor a menor fitness
+            //Ordenamos las soluciones de la población de menor a mayor fitness
             sort(solutions.begin(),solutions.end(),order);
             
             for(unsigned j=0;j<num_local and evaluations <100000;j++){
