@@ -1,0 +1,1309 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[spanish, es-tabla]{babel}
+\usepackage{caption}
+\usepackage{listings}
+\usepackage{adjustbox}
+\usepackage{enumitem}
+\usepackage{boldline}
+\usepackage{amssymb, amsmath}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+%\usepackage{soul}
+\usepackage{enumerate}
+\usepackage{hyperref}
+\usepackage{graphics, graphicx, float}
+
+% Meta
+\title{\textbf{\huge Metaheurísticas: Práctica 3}
+	\\\medskip \Large Búsquedas por Trayectorias\\ para el Problema de la Máxima Diversidad \medskip}
+\author{Pilar Navarro Ramírez - 76592479H \\ pilarnavarro@correo.ugr.es \\ Grupo 2: Viernes de 17:30 a 19:30}
+\date{ \today }
+
+% Custom
+\providecommand{\abs}[1]{\lvert#1\rvert}
+\setlength\parindent{0pt}
+\definecolor{Light}{gray}{.90}
+\newcommand\ddfrac[2]{\frac{\displaystyle #1}{\displaystyle #2}}
+\setlength{\parindent}{1.5em} %sangria
+\setlength{\parskip}{3mm}
+
+% Displaying code with lstlisting
+\lstset { %
+	language=C++,
+	backgroundcolor=\color{black!5}, % set backgroundcolor
+	basicstyle=\small,% basic font setting
+}
+
+\usepackage[ruled]{algorithm2e}
+
+
+\begin{document}	
+	
+	\maketitle 
+	\newpage
+	\tableofcontents
+	\newpage
+	
+	
+	\section{Descripción del problema}
+	
+	
+	El \textbf{Problema de la Máxima Diversidad (Maximum Diversity Problem, MDP)}, es un problema NP-completo de optimización combinatoria. 
+	Consiste en seleccionar un subconjunto de $m$ elementos de un conjunto inicial de $n$ elementos (con $n>m$) de forma que se maximice la diversidad entre los elementos escogidos.
+	
+	Además de esto, se dispone de una matriz $D=(d_{ij})$ de dimensión $n\times n$ que contiene las distancias entre todos los $ n $ elementos. Así, en la posición $(i,j)$ de la matriz, se encuentra la distandia entre el elemento i-ésimo y el j-ésimo ($\forall i,j=1,...,n$), siendo $d_{ii}=0\hspace{1mm}\forall i=1,...,n$. Por lo tanto, se trata de una matriz simétrica cuya diagonal está formada por ceros. 
+	
+	Existen varias formas de calcular la diversidad, pero la que nosotros usaremos consiste en calcular la suma de las distancias entre cada par de elementos de los $m$ seleccionados. 
+	
+	 El problema MDP se puede formular matemáticamente como sigue:
+	
+	$$ \text{Maximizar } z_{MS}(x) = \sum_{i=1}^{n-1} \sum_{j=i+1}^{n} d_{ij} x_i x_j $$
+	$$ \text{Sujeto a } \sum_{i=1}^{n} x_i = m $$
+	$$ x_i \in \{0,1\}, \forall i \in \{1,\dotsc,n\} $$
+	
+	donde $x$ es una solución al problema, esto es, es un vector binario de longitud $n$ que indica los $m$ elementos seleccionados, donde la posición i-ésima es 1 si se ha seleccionado el elemento i-ésimo.
+	
+	\newpage
+
+	
+	\section{Descripción de la aplicación de los algoritmos}
+	
+	Describimos aquí las consideraciones comunes a los algoritmos estudiados.
+	
+	Todos los algoritmos parten de una matriz de distancias $D$ de tamaño $n\times n$, como ya hemos comentado (que nosotros llamaremos simplemente \textit{matriz} en nuestras implementaciones). Dicha matriz es construida leyendo las distancias de los ficheros de datos que se nos proporcionan en cada caso (de lo cual se encarga la función \lstinline|readInput|). Se considera como entrada además el número de elementos a seleccionar $m$, también indicado en cada fichero. 
+	
+	\subsection{Representación de la soluciones}
+	
+	Una solución vendrá dada como un contenedor de enteros que contiene los $m$ elementos seleccionados, en vez de un vector binario como se indica en la descripción del problema. Esta última representación es menos eficiente, pues hay que tener en cuenta $n$ elementos con sus distancias en vez de $m$ a la hora de calcular la bondad de la solución (\textit{fitness}), así como en cualquier otra operación que involucre recorrer la solución completa.
+	
+	En el caso del \underline{algoritmo Greedy} una solución será un conjunto (set) de enteros correspondientes a los elementos elegidos, que pueden tomar los valores de entre $1$ y $n$, sin aparecer ninguno de ellos repetido. El tamaño de este conjunto será de $m$. Se usa aquí esta estructura de datos por ser el número de operaciones de consulta en la implementación del algoritmo muy pequeño en comparación con el número de operaciones de inserción y borrado, como veremos en la siguiente sección. 
+	
+	 Para el algoritmo de la \underline{búsqueda local} y los demás algoritmos basados en trayectorias, tomamos un vector de enteros en lugar de un conjunto (por realizarse un mayor número de operaciones de consulta en este algoritmo que en greedy) cumpliendo exactamente las mismas condiciones que el conjunto (elementos no repetidos, tamaño $m$, enteros con valores entre $1$ y $n$),  junto con el valor de fitness asociado a la solución. Concretamente, consideramos la siguiente estructura:
+
+	\begin{lstlisting}
+	struct solucion {
+		vector<int> elements;
+		double fitness;
+	};
+	\end{lstlisting}
+	
+	para la cual se ha sobrecargado el operador de asignación, de manera que al asignar una solución a otra lo que se hace es llamar al operador de asignación de cada una de las componentes del \lstinline|struct|.
+	
+	Aunque en un vector y en un conjunto los elementos aparecen ordenados, cabe mencionar que nosotros no tendremos en cuenta este orden, es decir, dos conjuntos o vectores con los mismos enteros pero en distinto orden son considerados la misma solución. 
+	
+	\subsection{Contribución de un elemento}
+	
+	Definimos una función \textbf{contribution}, que calcula la contribución de un determinado elemento al coste de la solución que se le pasa como parámetro. Esto es, suma las distancias de ese elemento a cada uno de los elementos que se encuentran en la solución indicada, la cual puede ser \underline{un conjunto o un vector de enteros}, como ya hemos comentado. 
+	
+	El elemento para el cual se quiere calcular la contribución puede formar parte o no del conjunto solución. En caso de que el elemento se encuentre en dicho conjunto determina la contribución de ese elemento a la solución. Si no forma parte, esta función permite saber cómo contribuiría el elemento en caso de estar incluido en la misma. 
+	
+	El pseudocódigo de esta función es el siguiente:
+		\begin{algorithm}
+		\caption{\sc contribution}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias, entero \textit{element}}
+		\KwOut{contribucion del entero \textit{element} en \textit{conjunto} }
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ i$ \textbf{in} $conjunto $ }{
+				sum $\leftarrow$ sum + matriz[ element, i ]
+			}
+			\Return sum
+		}
+	\end{algorithm}
+
+
+\subsection{Función objetivo}
+	
+	Como ya explicamos en el punto anterior, la función objetivo a maximizar en este problema es 
+	$$ z_{MS}(x) = \sum_{i=1}^{m-1} \sum_{j=i+1}^{m} d_{ij} $$ que está definida en la función \lstinline|fitness|, cuyo pesudocódigo es el siguiente:
+		
+	\begin{algorithm}[H]
+	\caption{\sc fitness}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias}
+		\KwOut{valor de la función objetivo para la solución dada en \textit{conjunto}}
+		\Begin{
+			sum $\leftarrow$ 0
+			
+			\For { $ it_1=conjunto.begin $ \textbf{to} $conjunto.end$ }{
+				\For {$it_2 = it_1$ \textbf{to} $conjunto.end$}{   
+					sum $\leftarrow$ sum + matriz[conjunto($it_1$), conjunto($it_2$)]
+				}
+			}
+			\Return sum
+		}
+	\end{algorithm}
+
+	Así, esta función permite evaluar la solución dada en \textit{conjunto}, de manera que cuanto mayor sea el valor devuelto por esta función mejor será la solución. Como para la función \lstinline|contribution|, el parámetro \textit{conjunto} que contiene los enteros que determinan una solución, puede ser un conjunto/set o un vector, según si se usa en el algoritmo greedy o en el de la búsqueda local. 
+	\newpage
+	
+	\subsection{Generación de soluciones aleatorias}
+	
+	Todos los algoritmos estudiados en esta práctica (menos el algoritmo Greedy) hacen uso de soluciones generadas aleatoriamente. Por lo tanto, consideramos la siguiente función, que se encarga de generar una solución aleatoria válida y de su posterior evaluación:
+	
+		\begin{algorithm}
+		\caption{\sc randomSolution}
+		\KwIn{tamaño de la solución $m$, \textit{matriz} de distancias}
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$sol \leftarrow \emptyset$ \tcp*{Partimos de la solución vacía} 
+			\While{ $|sol| < m$  }{
+				random $\leftarrow$  elemento aleatorio de $\{0,...,n-1\}$ \\
+				\If{random $\notin$ sol}{    
+					$sol \leftarrow sol \cup random$ \tcp*{ Si el elemento aleatorio considerado\\ no está ya en la solución, se añade} 
+				}	
+			}
+			\Return sol, $\operatorname{fitness}(sol, matriz)$ 
+		}
+	\end{algorithm}
+
+\subsection{Determinación de los elementos no seleccionados}
+
+	Dada una solución válida, es importante determinar los elementos que no pertenecen a esa solución, los cuales serán candidatos a ser elegidos para incluirlos en la solución a la hora de modificar la misma. La función \lstinline|validElements| se encargará de esto:
+	
+	\begin{algorithm}
+		\caption{\sc validElements}
+		\KwIn{vector de enteros seleccionados, $sel$}
+		\KwIn{número total de elementos del problema, $n$}
+		\KwOut{vector de enteros no seleccionados}
+		\Begin{
+			$no\_sel \leftarrow \emptyset$ \tcp*{Partimos del vector de no seleccionados vacío} 
+			$elem \leftarrow 0$ \\
+			\While{ $|no\_sel| < n-|sel|$  }{ 
+				\If{elem $\notin$ sel}{\tcp{Si el elemento considerado en la iteración actual no se\\ encuentra en el conjunto de seleccionados, se añade\\ al vector de no seleccionados} 
+					$no\_sel \leftarrow no\_sel \cup elem$ 
+				}	
+				elem $\leftarrow$ elem + 1\;
+			}
+			\Return $no\_sel$ 
+		}
+	\end{algorithm}
+	
+	Esta función se usará en todos los algoritmos, menos en el caso de Greedy. 
+	
+	\section{Descripción de los algoritmos}
+	
+	Pasamos ya a explicar los algoritmos implementados. 
+		
+	\subsection{Algoritmo Greedy}
+	
+	Para este algoritmo consideramos dos conjuntos de elementos (enteros): el conjunto de los elementos que han sido seleccionados para formar parte de la solución, $Sel$, y el conjunto de elementos que no han sido seleccionados, $NoSel$. 
+	
+	El algoritmo empieza con el conjunto $Sel$ vacío y añade a él en primer lugar el elemento más alejado al resto, esto es, aquel cuya suma de las distancias a todos los demás elementos es la mayor. Para determinar este elemento, nosotros hemos implementado la función \lstinline|furthestElement|. Lo que hace es llamar a la función \lstinline|contribution| (descrita en el apartado anterior) para cada uno de los elementos del problema y con un conjunto que contiene a todos los elementos, es decir, calcula la contribución de cada uno de los elementos a dicho conjunto total, y devuelve el elemento cuya contibución es la mayor. 
+
+	\begin{algorithm}[H]
+		\caption{\sc furthestElement}
+		\KwIn{\textit{matriz} de distancias}
+		\KwOut{elemento más alejado del resto, el de mayor contribución}
+		\Begin{
+			$NoSel$ $\leftarrow$ $\{0,1,...,n-1\}$     \tcp*{Inicializo el conjunto de no\\ seleccionados a los $ n $ elementos del problema} 
+			furthest $\leftarrow$ -1 \\
+			$max\_sum\_dist$ $\leftarrow$ -1 \\
+
+			\For {  i \textbf{in} $NoSel$ }{
+				contrib $\leftarrow$ contribution ($NoSel$, matriz,  i ) \\
+				\If{contrib $>$ $max\_sum\_dist$}{
+					$max\_sum\_dist$ $\leftarrow$ contrib \\
+					furthest $\leftarrow$ i
+				}
+			} 
+			\Return furthest
+		}
+	\end{algorithm}
+	
+	Una vez añadido a $Sel$ el elemento más alejado a todos los demás, el algoritmo continúa introduciendo en cada iteración el elemento no seleccionado que está más alejado al conjunto de elementos seleccionados, hasta alcanzar el tamaño máximo que puede tener la solución, $m$. Definimos la distancia de un elemento a un conjunto como el mínimo de las distancias de ese elemento a los elementos del conjunto:
+	$$ Dist(e,Sel)=\min_{s \in Sel} d(s,e) $$
+	La función \lstinline|distanceToSet| se encarga de calcular esta distancia:
+	
+		\begin{algorithm}[H]
+		\caption{\sc distanceToSet}
+		\KwIn{\textit{conjunto} de enteros, \textit{matriz} de distancias, entero \textit{element}}
+		\KwOut{distancia de \textit{element} a \textit{conjunto}}
+		\Begin{
+			
+			$min\_dist$ $\leftarrow$ $\infty$ \\
+			
+			\For {  i \textbf{in} $conjunto$ }{
+				dist $\leftarrow$ matriz[element,i] \\
+				\If{dist $<$ 	$min\_dist$}{
+					$min\_dist$ $\leftarrow$ dist \\
+				}
+			} 
+			\Return $min\_dist$
+		}
+		\end{algorithm}
+	 
+	 Para determinar en cada iteración del algoritmo cuál es el elemento no seleccionado más alejado de $Sel$, en el sentido de que maximiza la distancia a dicho conjunto, hacemos uso de la función \lstinline|furthestToSel|, cuyo pseudocódigo se muestra a continuación:
+ 
+\begin{algorithm}[H]
+	\caption{\sc furthestToSel}
+	\KwIn{conjunto de enteros seleccionados $Sel$}
+	\KwIn{conjunto de enteros no seleccionados $NoSel$}
+	\KwIn{\textit{matriz} de distancias}
+	\KwOut{elemento de $NoSel$ más alejado de $Sel$}
+	\Begin{
+
+		furthest $\leftarrow$ -1 \\
+		$max\_dist$ $\leftarrow$ -1 \\
+		
+		\For {  i \textbf{in} $NoSel$ }{
+			dist $\leftarrow$ $\operatorname{distanceToSet}(Sel, matriz,  i )$ \\
+			\If{dist $>$ $max\_dist$}{
+				$max\_dist$ $\leftarrow$ dist \\
+				furthest $\leftarrow$ i
+			}
+		} 
+		\Return furthest
+	}
+\end{algorithm}
+
+	Podemos ya ver el pseudo-código del algoritmo Greedy completo, donde se hace uso de las funciones anteriores en el sentido que hemos ido explicando:
+	
+
+	\begin{algorithm}[H]
+		\caption{\sc greedy}
+		\KwIn{ \textit{matriz} de distancias, tamaño de la solución $m$  }
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$NoSel$ $\leftarrow  \{0,1,\dotsc, n-1\}$ \\
+			$Sel \leftarrow \emptyset$ \\
+			furthest $\leftarrow$ $\operatorname{furthestElement}(matriz)$ \\
+			$Sel$ $\leftarrow$ $Sel \cup \{furthest\}$ \\
+			$NoSel$ $\leftarrow$ $NoSel \backslash \{furthest\}$ \\
+			\While{ $|Sel| < m$ }{
+				furthest $\leftarrow$ $\operatorname{furthestToSel}(Sel, NoSel, matriz)$ \\
+				$Sel$ $\leftarrow$ $Sel \cup \{furthest\}$ \\
+				$NoSel$ $\leftarrow$ $NoSel \backslash \{furthest\}$ \\
+			}
+		
+			\Return Sel, $\operatorname{fitness}(Sel, matriz)$ 
+		}
+	\end{algorithm}
+
+\newpage
+	\subsection{Búsqueda Local del Primer Mejor}
+	
+	Este algoritmo parte de una solución generada aleatoriamente y en cada iteración se generan soluciones del entorno (soluciones vecinas) hasta que se encuentra una que es mejor que la actual, la cual es entonces sustituida por la nueva solución generada. El algoritmo termina cuando se explora todo el vecindario y no se encuentra ninguna solución mejor o, para nuestro caso, cuando se han evaluado 100000 soluciones diferentes.
+	
+
+Para generar las soluciones vecinas, lo que se hace es escoger un elemento de la solución e intercambiarlo por otro elemento que no se encuentre en la misma, es decir, un elemento del conjunto devuelto por la función recién introducida. Se puede asegurar que este intercambio, cumpliendo las condiciones descritas, da siempre lugar a una solución válida. 
+
+Una solución vecina será aceptada si mejora a la solución actual, en otro caso se rechaza y se genera otra solución. La función \lstinline|improvement| se encarga de hacer esto. Es decir, determina si un cierto intercambio en la solución produce una mejora o no y en caso afirmativo actualiza la solución cambiando el elemento viejo por el nuevo y calculando el fitness de la nueva solución. Este cálculo resulta más eficiente si se factoriza, esto es, en vez de volver a considerar las distancias entre todos los elementos de la nueva solución, basta con sustraer del fitness antiguo la contribución del elemento eliminado y añadirle la contribución del nuevo elemento a la solución. 
+
+Para que se produzca una mejora, se debe cumplir que el nuevo elemento introducido tenga una mayor contribución a la solución que el elemento eliminado. Así, no hay que calcular la bondad de la nueva solución para compararla con la antigua, sino que es suficiente con determinar la contribución del elemento nuevo a la solución y compararla con la del elemento anterior. 
+
+Veamos ya el pseudo-código que lleva a cabo todas estas consideraciones:
+
+\begin{algorithm}[H]
+	\caption{\sc improvement}
+	\KwIn{sol: solución }
+	\KwIn{pos: posición de $sol$ cuyo elemento se va a cambiar}
+	\KwIn{$ old\_cont $: contribución a la solución del elemento que se encuentra en $pos$}
+	\KwIn{elem: nuevo elemento que se va a introducir en la posición $pos$ de $sol$}
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{mejora: booleano que indica si la solución mejora o no}
+	\KwOut{sol: nueva solución si se produce mejora o la antigua si no se mejora}
+	\Begin{
+		mejora $\leftarrow$ false \\
+		\tcp{Solución auxiliar que es copia de la solución considerada}
+		$nueva \leftarrow sol$  \\
+		\tcp{Elemento de la solución que se va a intercambiar}
+		$old\_elem \leftarrow sol[pos]$  \\
+		$nueva[pos] \leftarrow elem$  \\
+		 \tcp{Contribución del nuevo elemento a la solución actualizada}
+		$new\_cont \leftarrow \operatorname{contribution}(nueva, matriz, elem)$\\
+		\tcp{Si la contribución del nuevo elemento es mayor que la del antiguo, se produce mejora y se actualiza la solución}
+		\If{ $new\_cont > old\_cont$  }{			 
+			\tcp{Factorización de la función objetivo}
+			$nueva.fitness \leftarrow sol.fitness - old\_cont + new\_cont$ \\
+			$sol \leftarrow nueva $ \\
+			mejora $\leftarrow$ true
+		}
+		\Return mejora, $sol$
+	}
+\end{algorithm}
+\newpage
+	
+El elemento a intercambiar de la solución no se escoge de manera aleatoria, sino que se lleva a cabo una exploración inteligente del entorno de soluciones, enfocándonos en zonas donde se pueden obtener soluciones mejores. Concretamente, lo que se hace es calcular la contribución de cada elemento de la solución a la bondad de la misma, y seleccionar para intercambiar el elemento que menos contribuye. 
+La función \lstinline|lowestContribution| se encarga de esto:
+
+	\begin{algorithm}[H]
+	\caption{\sc lowestContribution}
+	\KwIn{sol: vector de enteros que determinan una solución}
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{$pos\_min$: posición en la solución \textit{sol} del elemento que menos contribuye}
+	\KwOut{ $min\_contrib$: contribución del elemento que menos contribuye}
+	\Begin{
+		$pos\_min \leftarrow -1$ \\
+		$min\_contrib \leftarrow \infty$ \\
+		\For{  i \textbf{in} indices of sol  }{ 
+			cont $\leftarrow \operatorname{contribution}(sol,matriz,sol[i])$ \\
+			\If{cont $< min\_contrib$}{
+				$pos\_min \leftarrow i$\\
+				$min\_contrib \leftarrow cont$
+			}	
+		}
+		\Return $pos\_min$, $min\_contrib$ 
+	}
+	\end{algorithm}
+\vspace{8mm}
+ 	Sólo nos queda un detalle del algoritmo por explicar y es qué elemento de entre los no seleccionados se introduce en la posición del elemento que menos contribuye para generar una solución vecina. Pues en este caso sí es totalmente aleatorio. Por ello, lo que hacemos es barajar en cada iteración el conjunto de elementos que no forman parte de la solución. 
+
+	Presentamos finalmente el algoritmo de la búsqueda local, que hace uso de todas estas funciones explicadas:
+	
+	\begin{algorithm}[H]
+		\caption{\sc localSearch}
+		\KwIn{m: tamaño de solución}
+		\KwIn{matriz: matriz de distancias}
+		\KwOut{solución válida del problema MDP junto con su fitness}
+		\Begin{
+			$num\_eval$ $\leftarrow$ 0 \\
+			mejora $\leftarrow$ true \\
+			\tcp{Empezamos con una solución aleatoria}
+			sol $\leftarrow \operatorname{randomSolution}(m,matriz)$ \\		 
+			\tcp{Elementos válidos para el intercambio}
+			$valid\_elements \leftarrow \operatorname{validElements}(sol, matriz.size)$  \\
+			\tcp{Elemento que menos contribuye y su contribución}
+			$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+			\tcp{Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones de la función objetivo}
+			\While{mejora \textbf{and} $num\_eval < 100000$}{
+				mejora $\leftarrow$ false \\
+				\tcp{$min\_contrib$ contiene tanto la posición como la contribución del elemento que menos contribuye}
+				$min\_pos \leftarrow min\_contrib.pos$ \\ 
+				\tcp{Guardamos el elemento antiguo que vamos a cambiar}
+				$old\_elem \leftarrow sol[min\_pos]$ \\
+				shuffle($valid\_elements$) \\
+				\tcp{/Intercambiamos el elemento que menos contribuye por todos los posibles hasta que se produzca una mejora}
+				\For{ k $\in valid\_elements$ \textbf{and} mejora \textbf{is} false  \textbf{and} $num\_eval < 100000$ }{
+					mejora $\leftarrow \operatorname{improvement}(sol,min\_pos,min\_contrib.contrib,k,matriz)$
+					$num\_eval \leftarrow num\_eval + 1$ \\ 
+				}
+			
+			  \If{mejora}{
+			  	\tcp{Actualizamos los elementos válidos, cambiando el elemento nuevo por el antiguo}
+			  	$valid\_elements \leftarrow valid\_elements\backslash\{k\}$\\
+			  	$valid\_elements \leftarrow valid\_elements\cup \{old\_elem\}$\\
+			  	\tcp{Determinamos el elemento que menos contribuye en la nueva solución}
+			  	$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+		  		}
+			}
+			\Return sol.elements, sol.fitness
+		}
+	\end{algorithm}
+
+\subsection{Enfriamiento Simulado}
+El algoritmo de \underline{Enfriamiento Simulado} (Simulated Annealing) es un método de búsqueda por entornos que usa un criterio de aceptación de soluciones vecinas que va cambiando a lo largo de su ejecución, para evitar que la búsqueda se quede atrapada en un óptimo local, permitiendo que se acepten soluciones peores. En concreto, controla la frecuencia de los movimientos de escape de \textit{óptimos locales} mediante una función de probabilidad que hará disminuir la probabilidad de estos movimientos hacia soluciones peores conforme avanza la búsqueda. Así, se aplica la filosofía de diversificar al principio e intensificar al final.
+
+Este algoritmo hace uso de una variable llamada Temperatura, $ T $, cuyo valor determina en qué medida pueden ser aceptadas soluciones vecinas peores que la actual. Dicha variable se inicializa a un valor alto, denominado
+Temperatura inicial, $T_0$, y se va reduciendo en cada iteración mediante un mecanismo de enfriamiento de la temperatura hasta alcanzar una Temperatura final, $T_f$. 
+
+Establecemos el valor de la temperatura inicial a $$T_0=\frac{\mu C(S_0)}{-ln(\phi)}$$
+donde $ C(S_0) $ es el coste de la solución inicial y $ \phi \in [0,1] $ es la
+probabilidad de aceptar una solución un $ \mu $ por 1 peor que la inicial. Así, la temperatura inicial dependerá de la solución aleatoria de la que parte la ejecución. 
+
+Consideramos $\mu=\phi=0.3$ y $T_f=10^{-3}$. 
+
+Para la modificación del valor de la temperatura hacemos uno del esquema de Cauchy modificado, 
+$$T_{k+1}=\frac{T_k}{1+\beta_k}; \beta_k=\frac{T_0-T_f}{MT_0T_f}$$
+donde $T_k$ es el valor de la temperatura en la iteración k-ésima del algoritmo y M es el número de enfriamientos (o iteraciones) que se realizarán. 
+
+En cada iteración del algoritmo se genera un número concreto de vecinos, que podrá ser como máximo $max\_vecinos=0.1n$. Por lo tanto, debemos implementar un operador de generación de vecinos. Este se encargará de, dada una solución factible, seleccionar aleatoriamente un elemento de la misma y cambiarlo por otro  que no forme parte de ella, esto es, algún elemento aleatorio de los devueltos por \lstinline|validElements|. El pseudocódigo de esta función es el siguiente: 
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{\sc changeSolution}
+	\KwIn{sol: solución, n:número total de elementos del problema  }
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{solución vecina a la original}
+	\Begin{
+		\tcp{Posición aleatoria de sol}
+		pos1 $\leftarrow$ elemento aleatorio en $\{1,...,m\}$ \tcp*{m es la longitud de una solución}
+		\tcp{Elemento de la solución que se va a intercambiar}
+		$old\_elem \leftarrow sol[pos]$  \\
+		\tcp{Contribución del elemento a cambiar en la solución}
+		$old\_cont \leftarrow \operatorname{contribution}(sol, matriz, old\_elem)$\\
+		\tcp{Conjunto de elementos válidos para añadir a la solución}
+		$valid \leftarrow \operatorname{validElements}(sol,n)$\\
+		\tcp{Posición aleatoria del vector de elementos válidos}
+		pos2 $\leftarrow$ elemento aleatorio en $\{1,...,n-m\}$\\
+		\tcp{Elemento no seleccionado a introducir en la nueva solución}
+		$new\_elem \leftarrow valid[pos2]$\\
+		
+		$sol[pos1] \leftarrow new\_elem$  \\
+		\tcp{Contribución del nuevo elemento a la solución actualizada}
+		$new\_cont \leftarrow \operatorname{contribution}(sol, matriz, new\_elem)$\\
+				 
+		\tcp{Caculamos el fitness de la nueva solución de manera factorizada}
+		$sol.fitness \leftarrow sol.fitness - old\_cont + new\_cont$\\
+		
+		\Return $sol$
+	}
+\end{algorithm}
+
+Tras cada generación de una solución vecina se aplica el criterio de aceptación para ver si la solución generada sustituye a la actual. Si la solución generada presenta mayor valor de fitness que la actual se acepta automáticamente. En caso contrario, la nueva solución se aceptará con una probabilidad de $e^{\frac{\Delta f}{T}}$, siendo $\Delta f$ la diferencia de coste entre la solución nueva y la anterior. Esto permite, como ya hemos comentado, que el algoritmo no se quede atrapado en óptimos locales y pueda salir de estos. 
+
+Notamos que $e^{\frac{\Delta f}{T}}$ depende tanto de la diferencia de coste entre las soluciones como de la temperatura, de manera que a mayores temperaturas (primeras iteraciones) más probable es que se acepten soluciones peores y, del mismo modo, a menor diferencia de fitness entre las soluciones, hay mayor probabilidad de aceptación. 
+
+Tras generar el máximo número de vecinos permitidos en una iteración o tras aceptar un determinado número de soluciones, que será $max\_exitos=0.1*max\_vecinos$, se enfría la temperatura según el esquema de Cauchy y se pasa a la siguiente iteración. 
+
+Este proceso se repite hasta que se hayan realizado 100000 evaluaciones de la función objetivo o hasta que el número de soluciones aceptadas en una iteración sea 0, en cuyo caso se habrá encontrado una solución suficientemenete buena o el algoritmos se habrá quedado atrapado en un óptimo local del cual no es capaz de salir y no tendría sentido seguir iterando. 
+
+Así, el pseudocódigo final de este algoritmo queda como sigue: 
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{\sc ES}
+	\KwIn{matriz: matriz de distancias, m:longitud de una solución}
+	\KwIn{n:número total de elementos del problema}
+	\KwOut{solución válida del problema MDP junto con su fitness}
+	$num\_eval\gets 1$ \tcp*{Número de evaluaciones de la función objetivo}
+	\tcp*{Empieza siendo 1 para contar la solución aleatoria inicial}
+	$\mu\gets 0.3$\;
+	$\phi\gets 0.3$\;
+	$max\_vecinos\gets 10n$\;
+	$max\_exitos\gets 0.1*max\_vecinos$\;
+	$M\gets 100000/max\_vecinos$\;
+	$T_f\gets 10^{-3}$\;
+	$exitos\gets 1$ \tcp*{Para que entre la primera vez en el bucle}
+	$sol\gets \operatorname{randomSolution}(m,matriz)$\;
+	$T_0\gets -\mu\cdot sol.fitness/\log \phi$ \tcp*{Temperatura inicial}
+	$beta\gets (T_0-T_f)/(M\cdot T\cdot T_f)$\;
+
+	\tcp{Si la temperatura final es mayor que la final, disminuimos la última}
+	\While{$T_f>T_0$}{	
+		$T_f\gets T_f/10$ 
+	}
+	$T\gets T_0$\;
+	$best\_sol\gets sol$\;
+	
+	\While{$exitos>0$ \textbf{and} $num\_eval<100000$}{
+		$exitos\gets 0$ \tcp*{Número de soluciones aceptadas}
+		$neighbors \gets 0$ \tcp*{Número de vecinos generados}
+		\While{$neighbors < max\_vecinos$ \textbf{and} $exitos<max\_exitos$ \textbf{and}$num\_eval<100000$}{
+			aux $\leftarrow$ sol \tcp*{Solución auxiliar}
+			\tcp{Se genera una solución vecina a la actual}
+			aux$\leftarrow \operatorname{changeSolution}(aux,n,matriz)$ \\
+			$neighbors \gets neighbors+1$\;
+			$num\_eval \gets num\_eval+1$\;
+			$\Delta f \gets aux.fitness-sol.fitness$\\
+			random $\leftarrow$ número aleatorio en $(0,1)$\\
+			\If{$\Delta f>0$ \textbf{or} $random \leq \exp(\Delta f/T)$}{
+				$exitos\gets exitos+1$\;
+				sol $\leftarrow$ aux \tcp*{Se acepta la solución vecina generada}
+				\If{$sol.fitness>best\_sol.fitness$}{
+					$best\_sol\gets sol$\\
+				}
+			}
+		}
+		$T\gets T/(1+beta\cdot T)$ \tcp*{Se enfría la temperatura}
+	}
+	\Return{$best\_sol$}\;
+\end{algorithm}
+\subsection{Búsqueda Multiarranque básica}
+
+Este algoritmo consiste en aplicar la búsqueda local a varias soluciones generadas aleatoriamente, guardando y devolviendo la mejor de las soluciones obtenidas. En concreto, en nuestro algoritmo se generarán 10 soluciones aleatorias, a las cuales se les aplicará la búsqueda local durante un máximo de 10000 evaluaciones de la función objetivo. 
+
+Consideramos unas ligeras modificaciones en el pseudo-código de la búsqueda local, presentado en el apartado correspondiente, pues ahora esta no partirá de una solución aleatoria cualquiera, sino de la solución que se le proporcione como parámetro. Además, debemos establecer el límite de evaluaciones a 10000, en vez de 100000 como teníamos antes:
+
+\begin{algorithm}[H]
+	\caption{\sc localSearch}
+	\KwIn{sol: solución de partida}
+	\KwIn{matriz: matriz de distancias}
+	\KwOut{solución válida del problema MDP junto con su fitness}
+	\Begin{
+		$num\_eval$ $\leftarrow$ 0 \\
+		mejora $\leftarrow$ true \\	 
+		\tcp{Elementos válidos para el intercambio}
+		$valid\_elements \leftarrow \operatorname{validElements}(sol, matriz.size)$  \\
+		\tcp{Elemento que menos contribuye y su contribución}
+		$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+		\tcp{Iteramos mientras la solución mejore y no se haya superado el número máximo de evaluaciones de la función objetivo}
+		\While{mejora \textbf{and} $num\_eval < 10000$}{
+			mejora $\leftarrow$ false \\
+			\tcp{$min\_contrib$ contiene tanto la posición como la contribución del elemento que menos contribuye}
+			$min\_pos \leftarrow min\_contrib.pos$ \\ 
+			\tcp{Guardamos el elemento antiguo que vamos a cambiar}
+			$old\_elem \leftarrow sol[min\_pos]$ \\
+			shuffle($valid\_elements$) \\
+			\tcp{/Intercambiamos el elemento que menos contribuye por todos los posibles hasta que se produzca una mejora}
+			\For{ k $\in valid\_elements$ \textbf{and} mejora \textbf{is} false  \textbf{and} $num\_eval < 10000$ }{
+				mejora $\leftarrow \operatorname{improvement}(sol,min\_pos,min\_contrib.contrib,k,matriz)$
+				$num\_eval \leftarrow num\_eval + 1$ \\ 
+			}
+			
+			\If{mejora}{
+				\tcp{Actualizamos los elementos válidos, cambiando el elemento nuevo por el antiguo}
+				$valid\_elements \leftarrow valid\_elements\backslash\{k\}$\\
+				$valid\_elements \leftarrow valid\_elements\cup \{old\_elem\}$\\
+				\tcp{Determinamos el elemento que menos contribuye en la nueva solución}
+				$min\_contrib \leftarrow \operatorname{lowestContribution}(sol,matriz)$  \\
+			}
+		}
+		\Return sol.elements, sol.fitness
+	}
+\end{algorithm}
+
+Podemos ya ver el pseudo-código de la BMB:
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon 
+	\caption{{\sc BMB}}
+	\KwIn{matriz: matriz de distancias}
+	\KwIn{m: tamaño de una solución}
+	\KwOut{solución válida del problema MDP }
+	$best\_sol.fitness\gets -1$\;
+	\For{$i \in \{0,\ldots,9\}$}{
+		$sol\gets \operatorname{randomSolution}(m,matriz)$\;
+		$sol\gets \operatorname{localSearch}(sol,matriz)$\;		
+		\If{$sol.fitness>best\_sol.fitness$}{
+			$best\_sol\gets sol$\\
+		}
+	}
+	\Return{$best\_sol$}\;
+
+\end{algorithm}
+
+\subsection{Iterative Local Search}
+
+Este algoritmo está basado en la aplicación repetida de la búsqueda local a una solución que se obtiene mutando un óptimo local previamente encontrado. Se parte de una solución generada aleatoriamente, a la cual se le aplica la búsqueda local para mejorarla. A continuación se muta la mejor solución encontrada hasta el momento, y también se le aplica BL. Este último paso se repite durante 9 iteraciones, almacenando y devolviendo la mejor solución encontrada en todas ellas.
+
+El operador de mutación de una solución consiste en cambiar aleatoriamente el 10\% de los elementos de la misma por otros elementos que no formen parte de dicha solución. Así, el pseudocódigo de dicho operador queda como sigue: \\
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{{\sc mutate}}
+	\KwIn{Solución a mutar, $ sol $, número de elementos a mutar, $ num\_mut $, $ matriz $ de distancias}
+	\KwOut{Solución $ sol $ modificada}		
+	\tcp{Posiciones de la solución cuyos elementos se van a cambiar}
+	$to\_change \gets \emptyset$\\
+	$elems \gets \emptyset$\tcp*{Nuevos elementos a introducir en la solución}
+	\textbf{do}\\
+		pos $\leftarrow$ elemento aleatorio de $\{1,...,m\}$ \tcp*{m es el tamaño de la solución}
+		\tcp{Si la posición no está ya seleccionada}
+		\If{pos $\notin to\_change$}{ 
+			\tcp{Se añade al conjunto de posiciones a cambiar}
+			$to\_change \gets to\_change\cup\{ pos\}$\\
+		}
+	\textbf{while}	$to\_change.size < num\_mut$\\
+	
+	valid $\leftarrow \operatorname{validElements}(sol,matriz.size)$ \\
+	\textbf{do}\\
+	pos $\leftarrow$ elemento aleatorio de $\{1,...,n-m\}$ \\
+	\tcp{Si el elemento no está ya seleccionado}
+	\If{valid[pos] $\notin elems$}{ 
+		$elems \gets elems\cup\{ valid[pos]\}$\tcp*{Se añade al conjunto de nuevos elementos}
+	}
+	\textbf{while}	$elems.size < num\_mut$\\
+	\tcp{Cambiamos los elementos de la solución}
+	\For{$i\in \{0,...,num\_mut-1\}$}{
+		$sol[to\_change[i]]\gets elems[i]$\;
+	}
+	\tcp{Actualizamos el fitness de la solución}
+	sol.fitness $\leftarrow \operatorname{fitness}(sol,matriz)$\\
+	
+	\Return sol
+\end{algorithm}
+
+Y el pseudo-código principal de ILS es el siguiente:
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon % Some LaTeX compilers require you to use \dontprintsemicolon instead
+	\caption{{\sc ILS}}
+	\KwIn{\textit{matriz} de distancias, tamaño de una solución $ m $}
+	\KwOut{Solución válida del problema MDP}
+	$num\_mut \gets 0.1\cdot m$\;
+	$best\_sol\gets \operatorname{randomSolution}(m,matriz)$\;
+	$best\_sol\gets \operatorname{localSearch}(best\_sol,matriz)$\;
+
+	\For{$i\in \{0,...9\}$}{
+		sol $\leftarrow$ $best\_sol$\\
+		$sol \gets \operatorname{mutate}(num\_mut,sol,matriz)$\;
+		$sol \gets \operatorname{localSearch}(sol,matriz)$\;		
+		\If{$sol.fitness>best\_sol.fitness$}{
+			$best\_sol\gets sol$ \;
+		}
+	}
+	\Return{$best\_sol$}\;
+\end{algorithm}
+
+donde \lstinline|localSearch| es la modificación de la BL cuyo pseudo-código aparece en el apartado anterior (de BMB).
+
+\subsection{Algoritmo Híbrido ILS-ES}
+
+Este algoritmo presenta exactamente el mismo funcionamiento que el anterior salvo que, en lugar de la búsqueda local, usa el enfriamiento simulado para mejorar las soluciones. 
+
+Consideramos una ligera modificación en el pseudo-código del ES presentado en el apartado correspondiente, pues ahora este no partirá de una solución aleatoria, sino de la solución que se le pase como parámetro. Además, el número máximo de evaluaciones permitido de la función objetivo será 10000, en vez de 100000:\\
+
+
+\begin{algorithm}[H]
+	\DontPrintSemicolon
+	\caption{\sc ES}
+	\KwIn{sol: solución de partida}
+	\KwIn{matriz: matriz de distancias, m:longitud de una solución}
+	\KwIn{n:número total de elementos del problema}
+	\KwOut{solución válida del problema MDP junto con su fitness}
+	$num\_eval\gets 0$ \tcp*{Número de evaluaciones de la función objetivo}
+	$\mu\gets 0.3$\;
+	$\phi\gets 0.3$\;
+	$max\_vecinos\gets 10n$\;
+	$max\_exitos\gets 0.1*max\_vecinos$\;
+	$M\gets 10000/max\_vecinos$\;
+	$T_f\gets 10^{-3}$\;
+	$exitos\gets 1$ \tcp*{Para que entre la primera vez en el bucle}
+	$T_0\gets -\mu\cdot sol.fitness/\log \phi$ \tcp*{Temperatura inicial}
+	$beta\gets (T_0-T_f)/(M\cdot T\cdot T_f)$\;
+	
+	\tcp{Si la temperatura final es mayor que la final, disminuimos la última}
+	\While{$T_f>T_0$}{	
+		$T_f\gets T_f/10$ 
+	}
+	$T\gets T_0$\;
+	$best\_sol\gets sol$\;
+	
+	\While{$exitos>0$ \textbf{and} $num\_eval<10000$}{
+		$exitos\gets 0$ \tcp*{Número de soluciones aceptadas}
+		$neighbors \gets 0$ \tcp*{Número de vecinos generados}
+		\While{$neighbors < max\_vecinos$ \textbf{and} $exitos<max\_exitos$ \textbf{and} $num\_eval<10000$}{
+			aux $\leftarrow$ sol \tcp*{Solución auxiliar}
+			\tcp{Se genera una solución vecina a la actual}
+			aux$\leftarrow \operatorname{changeSolution}(aux,n,matriz)$ \\
+			$neighbors \gets neighbors+1$\;
+			$num\_eval \gets num\_eval+1$\;
+			$\Delta f \gets aux.fitness-sol.fitness$\\
+			random $\leftarrow$ número aleatorio en $(0,1)$\\
+			\If{$\Delta f>0$ \textbf{or} $random \leq \exp(\Delta f/T)$}{
+				$exitos\gets exitos+1$\;
+				sol $\leftarrow$ aux \tcp*{Se acepta la solución vecina generada}
+				\If{$sol.fitness>best\_sol.fitness$}{
+					$best\_sol\gets sol$\\
+				}
+			}
+		}
+		$T\gets T/(1+beta\cdot T)$ \tcp*{Se enfría la temperatura}
+	}
+	\Return{$best\_sol$}\;
+\end{algorithm}
+
+Por tanto, el pseudo-código de ILS-ES es idéntico al del apartado anterior, salvo que hay  que cambiar donde aparece \lstinline|localSearch| por el \lstinline|ES| que acabamos de presentar. 
+
+\subsection{ES y ILS-ES con esquema de enfriamiento proporcional}
+
+Consideramos una modificación de los algoritmos de enfriamiento simulado y ILS-ES, en los que, para el enfriamiento de la temperatura, se usa un esquema proporcional en lugar del esquema de Cauchy modificado, esto es, tomamos $T_{k+1}=0.9\cdot T_k$ siendo $T_k$ el valor de la temperatura en el enfiramiento k-ésimo. 
+
+Así, el pseudo-código para estos dos algoritmo será el mismo que el de sus algoritmos correspondientes cambiando el enfriamiento de la temperatura por $ T \leftarrow 0.9\cdot T $. Además, no es necesario calcular las variables $\beta$ y $\mu$. 
+
+\subsection{ES versión 2}
+
+Este algoritmo será otra modificación del ES, en el que se toman los valores  $\phi=0.5$ y $\mu=0.3$, esto es, se aceptan soluciones un 30\% peores que la acutal con una probabilidad del 50\%, de manera que se aumenta la diversificación. 
+
+\subsection{ES versión 3}
+
+En este caso lo que hacemos es cambiar el máximo número de vecinos que se pueden generar en cada iteración, pasando de $ 10 m $ a $ m $. Así, el número de vecinos que se generan en una iteración se ve reducido, y el número de iteraciones que se llevarán a cabo es mayor. 
+
+\subsection{ILS versión 2}
+
+Modificamos la búsqueda local iterativa para que se muten más soluciones y el límite de evaluaciones de la función objetivo en cada aplicación de la búsqueda local sea menor, de manera que se favorece la diversificación y se disminuye la intensificación. En concreto, se mutará la mejor solución encontrada hasta el momento 99 veces, y se aplicará la búsqueda local a la solución resultante durante un máximo de 1000 evaluaciones de la función objetivo. Cabe notar que la BL se aplica en total 99+1=100 veces contando la solución aleatoria inicial.  Estudiaremos en el apartado de Análisis de los resultados cómo afecta esta modificación a los resultados. 
+
+\newpage
+	\section{Procedimiento para el desarrollo de la práctica}
+	
+	La implementación de todos los algoritmos ha sido llevada a cabo usando el lenguaje C++ y la librería STL, de la cual usamos los tipos de estructuras de datos \textbf{set} y \textbf{vector}, como ya hemos comentado. Además, se utilizan las siguientes funciones:
+	\begin{itemize}
+		\item \lstinline|clock| de la librería \lstinline|time.h| para medir el tiempo de ejecución
+		\item  \lstinline|shuffle| y \lstinline|find| de la librería \lstinline|algorithm|
+		\item \lstinline|rand|, para generar números pseudo-aleatorios y \lstinline|srand|, para fijar una semilla, de \lstinline|stdlib.h|
+		\item  \lstinline|numeric_limits<double>::infinity()| de la librería \lstinline|limits| para inicializar los valores mínimos a infinito
+	\end{itemize} 
+
+	\subsection{Manual de usuario}
+	
+	Los ejecutables de cada uno de los algoritmos estudiados se encuentran en la carpeta \textbf{bin} del proyecto. Disponemos de los siguientes archivos:
+	\begin{itemize}
+		\item [-] greedy $ \rightarrow $ algoritmo greedy
+			\item [-] localSearch $ \rightarrow $  algoritmo de búsqueda local del primer mejor
+			\item [-] ES $ \rightarrow $ algoritmo de enfriamiento simulado
+			\item [-] ES-Prop $ \rightarrow $ algoritmo de enfriamiento simulado con esquema proporcional
+			\item [-] ES2 $ \rightarrow $ algoritmo de enfriamiento simulado segunda versión
+			\item [-] ES3 $ \rightarrow $ algoritmo  de enfriamiento simulado tercera versión
+			\item [-]	BMB $ \rightarrow $ algoritmo de la búsqueda multiarranque básica
+			\item [-]	ILS $ \rightarrow $ algoritmo de la búsqueda local iterativa
+			\item [-]	ILS2 $ \rightarrow $ algoritmo de la búsqueda local iterativa segunda versión
+			\item [-]	ILS-ES $ \rightarrow $ algoritmo de la búsqueda local iterativa con enfriamiento simulado
+			\item [-]	ILS-ES-Prop $ \rightarrow $ algoritmo de la búsqueda local iterativa con enfriamiento simulado y esquema proporcional
+	\end{itemize}
+	
+	Todos muestran los resultados por pantalla en el formato: \textit{Fitness, Tiempo de ejecución (s)}\\ pero podemos redirigir la salida al fichero que queramos. Además, la semilla se le pasa como parámetro (en el caso de los algoritmos de la búsqueda local) y leen los datos  de la entrada estándar. Así, para ejecutar el algoritmo de la búsqueda local del primer mejor con una semilla de 4, con el fichero de datos de entrada $MDG-a\_1\_n500\_m50.txt$ y con salida en el fichero \textit{localSearch.csv}, basta con escribir en consola la siguiente sentencia:
+	
+	 \lstinline| bin/localSearch 4 < data/MDG-a_1_n500_m50.txt >> salida/localSearch.csv|
+	
+	Para el algoritmo Greedy la sentencia sería igual pero sin incorporar la semilla. 
+	
+	Para automatizar el proceso de ejecución de cada algoritmo sobre los distintos casos de estudio, se dispone del script \lstinline|execute.sh|. La semilla se fija dentro de este archivo en la variable \lstinline|semilla|, por lo que para ejecutar los algoritmos con todos los ficheros de datos con una semilla diferente, solo hay que cambiar el valor de dicha variable y ejecutar el script. 
+	
+	Por otra parte, como era de esperar, el fichero \lstinline|makefile| se encarga de la compilación. Al escribir en consola la orden \lstinline|make| se compilan todos los ficheros de código fuente y se ejecuta el script \lstinline|execute.sh|. 
+	
+	\section{Experimentos y análisis de resultados}
+	
+	Los experimentos han sido realizados en el mismo ordenador, que tiene las siguientes características: sistema operativo Ubuntu 20.04.1 64 bits, procesador Intel Core i7-6500U 2.50GHz, memoria RAM 8GB DDR3 L.
+	
+	Los resultados han sido obtenidos fijando la semilla:
+	\vspace{-5mm} \begin{center}{ $ 7413 $}\end{center}
+ \vspace{-4mm}
+	
+	Los \underline{casos del problema} considerados son 30, elegidos de los casos recopilados en la biblioteca \textbf{MDPLib}. Concretamente, se estudia el grupo de casos \textbf{MDG}, del que se han seleccionado las 10 primeras instancias del \textit{tipo a} (matrices $n\times n$ con distancias enteras aleatorias en $ \{0,10\} $, n=500 y m=50), 10 instancias (entre la 21 y la 30) del \textit{tipo b} (matrices $n\times n$ con distancias reales aleatorias en [0,1000], n=2000 y m=200) y otras 10 instancias (1,2,8,9,10,13,14,15,19,20) del \textit{tipo c} (matrices $n\times n$ con distancias enteras aleatorias en $ \{00,1000\} $, n=3000 y\\ $ m=\{300,400,500,600\} $).
+	
+	\subsection{Resultados obtenidos}
+	
+	Presentamos a continuación los valores de coste, desviación  y tiempo de ejecución obtenidos para cada uno de los algoritmos considerados y para cada caso de estudio.
+	\newpage
+	\textbf{Algoritmo Greedy}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			MDG-a\_1\_n500\_m50 & 6865.94 & 12.36 & 0.00431 \\ \hline
+			MDG-a\_2\_n500\_m50 & 6754.02 & 13.09 & 0.004396 \\ \hline
+			MDG-a\_3\_n500\_m50 & 6741.6 & 13.12 & 0.004332 \\ \hline
+			MDG-a\_4\_n500\_m50 & 6841.59 & 11.95 & 0.004125 \\ \hline
+			MDG-a\_5\_n500\_m50 & 6740.34 & 13.09 & 0.004243 \\ \hline
+			MDG-a\_6\_n500\_m50 & 7013.94 & 9.77 & 0.004313 \\ \hline
+			MDG-a\_7\_n500\_m50 & 6637.46 & 14.59 & 0.004386 \\ \hline
+			MDG-a\_8\_n500\_m50 & 6946.28 & 10.38 & 0.004014 \\ \hline
+			MDG-a\_9\_n500\_m50 & 6898.01 & 11.22 & 0.004446 \\ \hline
+			MDG-a\_10\_n500\_m50 & 6853.68 & 11.91 & 0.00442 \\ \hline
+			MDG-b\_21\_n2000\_m200 & 10314568.35 & 8.72 & 0.450164 \\ \hline
+			MDG-b\_22\_n2000\_m200 & 10283328.5 & 8.89 & 0.448588 \\ \hline
+			MDG-b\_23\_n2000\_m200 & 10224214.16 & 9.52 & 0.444544 \\ \hline
+			MDG-b\_24\_n2000\_m200 & 10263575.47 & 9.10 & 0.456051 \\ \hline
+			MDG-b\_25\_n2000\_m200 & 10250090.79 & 9.26 & 0.438881 \\ \hline
+			MDG-b\_26\_n2000\_m200 & 10196189.88 & 9.71 & 0.535054 \\ \hline
+			MDG-b\_27\_n2000\_m200 & 10358195.61 & 8.38 & 0.652858 \\ \hline
+			MDG-b\_28\_n2000\_m200 & 10277383.17 & 8.89 & 0.514529 \\ \hline
+			MDG-b\_29\_n2000\_m200 & 10291258.67 & 8.90 & 0.453689 \\ \hline
+			MDG-b\_30\_n2000\_m200 & 10263859.33 & 9.14 & 0.437068 \\ \hline
+			MDG-c\_1\_n3000\_m300 & 22943111 & 7.80 & 1.557347 \\ \hline
+			MDG-c\_2\_n3000\_m300 & 22982398 & 7.72 & 1.703191 \\ \hline
+			MDG-c\_8\_n3000\_m400 & 40434465 & 6.91 & 2.50232 \\ \hline
+			MDG-c\_9\_n3000\_m400 & 40488295 & 6.79 & 2.391048 \\ \hline
+			MDG-c\_10\_n3000\_m400 & 40455410 & 6.95 & 2.641655 \\ \hline
+			MDG-c\_13\_n3000\_m500 & 63170811 & 5.73 & 3.631593 \\ \hline
+			MDG-c\_14\_n3000\_m500 & 62817710 & 6.21 & 3.497278 \\ \hline
+			MDG-c\_15\_n3000\_m500 & 63066444 & 5.86 & 3.515948 \\ \hline
+			MDG-c\_19\_n3000\_m600 & 90566205 & 5.30 & 4.681146 \\ \hline
+			MDG-c\_20\_n3000\_m600 & 90602264 & 5.27 & 5.020458 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Resultados para el algoritmo Greedy}
+	\label{}
+\end{table}
+\newpage
+\textbf{Búsqueda local}
+\begin{table}[H]
+	\begin{center}
+\begin{tabular}{|l|c|c|c|} 
+	\hline
+	\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			MDG-a\_1\_n500\_m50 & 7599.76 & 2.99 & 0.002025 \\ \hline
+			MDG-a\_2\_n500\_m50 & 7679.05 & 1.19 & 0.001863 \\ \hline
+			MDG-a\_3\_n500\_m50 & 7636.37 & 1.59 & 0.001918 \\ \hline
+			MDG-a\_4\_n500\_m50 & 7589.15 & 2.33 & 0.001854 \\ \hline
+			MDG-a\_5\_n500\_m50 & 7588.68 & 2.15 & 0.002375 \\ \hline
+			MDG-a\_6\_n500\_m50 & 7589.2 & 2.37 & 0.001465 \\ \hline
+			MDG-a\_7\_n500\_m50 & 7616.8 & 1.99 & 0.001889 \\ \hline
+			MDG-a\_8\_n500\_m50 & 7570.99 & 2.32 & 0.001829 \\ \hline
+			MDG-a\_9\_n500\_m50 & 7650.44 & 1.54 & 0.001972 \\ \hline
+			MDG-a\_10\_n500\_m50 & 7623.53 & 2.02 & 0.001726 \\ \hline
+			MDG-b\_21\_n2000\_m200 & 11194345.39 & 0.93 & 0.078849 \\ \hline
+			MDG-b\_22\_n2000\_m200 & 11198330.26 & 0.78 & 0.121368 \\ \hline
+			MDG-b\_23\_n2000\_m200 & 11182727.52 & 1.04 & 0.090211 \\ \hline
+			MDG-b\_24\_n2000\_m200 & 11184415.56 & 0.94 & 0.125306 \\ \hline
+			MDG-b\_25\_n2000\_m200 & 11202715.92 & 0.83 & 0.134078 \\ \hline
+			MDG-b\_26\_n2000\_m200 & 11152433.18 & 1.24 & 0.116869 \\ \hline
+			MDG-b\_27\_n2000\_m200 & 11189891.7 & 1.02 & 0.119383 \\ \hline
+			MDG-b\_28\_n2000\_m200 & 11157321.43 & 1.09 & 0.106994 \\ \hline
+			MDG-b\_29\_n2000\_m200 & 11192932.07 & 0.92 & 0.104435 \\ \hline
+			MDG-b\_30\_n2000\_m200 & 11152329.79 & 1.28 & 0.078128 \\ \hline
+			MDG-c\_1\_n3000\_m300 & 24648263 & 0.95 & 0.501001 \\ \hline
+			MDG-c\_2\_n3000\_m300 & 24676154 & 0.92 & 0.512707 \\ \hline
+			MDG-c\_8\_n3000\_m400 & 43098299 & 0.78 & 0.898523 \\ \hline
+			MDG-c\_9\_n3000\_m400 & 43141730 & 0.68 & 1.175382 \\ \hline
+			MDG-c\_10\_n3000\_m400 & 43201539 & 0.63 & 1.046369 \\ \hline
+			MDG-c\_13\_n3000\_m500 & 66668600 & 0.52 & 1.660269 \\ \hline
+			MDG-c\_14\_n3000\_m500 & 66693391 & 0.43 & 1.673518 \\ \hline
+			MDG-c\_15\_n3000\_m500 & 66783597 & 0.31 & 1.794494 \\ \hline
+			MDG-c\_19\_n3000\_m600 & 95307787 & 0.34 & 3.095673 \\ \hline
+			MDG-c\_20\_n3000\_m600 & 95315225 & 0.34 & 3.067012 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Resultados para el algoritmo de búsqueda local del primer mejor}
+	\label{}
+\end{table}
+\newpage
+
+\textbf{Enfriamiento Simulado}
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+		MDG-a\_1\_n500\_m50 & 7678.11 & 1.99 & 0.361629 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7640.55 & 1.69 & 0.14189 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7538.7 & 2.84 & 0.241213 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7616.87 & 1.97 & 0.418492 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7638.39 & 1.51 & 0.370235 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7632.39 & 1.82 & 0.265257 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7571.32 & 2.58 & 0.359476 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7612.92 & 1.78 & 0.444353 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7630.04 & 1.80 & 0.255594 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7572.18 & 2.68 & 0.238489 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 11130280.84 & 1.50 & 13.053819 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 11103673.87 & 1.62 & 12.767416 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11128548.35 & 1.52 & 12.969726 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 11123723.52 & 1.48 & 12.808461 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 11181858.71 & 1.01 & 12.962768 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 11126914.76 & 1.46 & 12.721742 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 11155542.02 & 1.33 & 12.743572 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 11149355.34 & 1.16 & 12.741256 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 11106235.88 & 1.69 & 12.799816 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11160546.52 & 1.20 & 13.07157 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24611445 & 1.10 & 25.508213 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24568380 & 1.35 & 25.310284 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 43053944 & 0.88 & 32.055538 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 43118902 & 0.73 & 32.415083 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 43011653 & 1.07 & 32.028375 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 66515370 & 0.74 & 38.722601 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 66575781 & 0.60 & 38.919961 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 66596130 & 0.59 & 38.91442 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 95020722 & 0.64 & 44.861724 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 95078923 & 0.59 & 46.077711 \\ \hline
+	\end{tabular}
+	\caption{Resultados del Enfriamiento Simulado}
+	\label{}
+	\end{center}
+\end{table}
+\newpage
+\textbf{Enfriamiento simulado con esquema proporcional}
+
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 7734.5 & 1.27 & 0.907588 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7702.51 & 0.89 & 1.029182 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7701.5 & 0.75 & 1.015719 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7732.14 & 0.49 & 0.966112 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7734.96 & 0.26 & 0.976293 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7759.33 & 0.18 & 0.881734 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7728.63 & 0.55 & 0.88912 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7680.42 & 0.91 & 0.95001 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7681.24 & 1.14 & 1.062548 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7741.3 & 0.50 & 1.005495 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 10157254.21 & 10.11 & 12.710014 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 10173287.92 & 9.87 & 12.980063 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 10166166.32 & 10.03 & 12.734856 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 10166892.44 & 9.95 & 12.753764 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 10176082.91 & 9.91 & 12.720688 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 10192410.98 & 9.74 & 12.76846 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 10147864.97 & 10.24 & 13.03998 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 10144825.34 & 10.06 & 12.703971 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 10159694.61 & 10.07 & 12.799469 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 10163366.59 & 10.03 & 12.760804 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 22667884 & 8.91 & 25.413164 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 22662773 & 9.00 & 25.304935 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 40241308 & 7.36 & 32.115399 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 40211514 & 7.43 & 32.500695 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 40174381 & 7.59 & 32.443536 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 62733372 & 6.39 & 39.012691 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 62751395 & 6.31 & 39.110124 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 62741296 & 6.35 & 38.84062 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 90322433 & 5.55 & 45.344314 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 90343588 & 5.54 & 63.080852 \\ \hline
+				\end{tabular}
+				\caption{Resultados del Enfriamiento Simulado con esquema proporcional}
+				\label{}
+				\end{center}
+			\end{table}
+			
+\newpage			
+\textbf{Enfriamiento simulado versión 2}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+		MDG-a\_1\_n500\_m50 & 7634.29 & 2.55 & 0.482379 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7588.5 & 2.36 & 0.445368 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7538.7 & 2.84 & 0.235949 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7646.88 & 1.59 & 0.242228 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7638.39 & 1.51 & 0.37175 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7644.29 & 1.66 & 0.352385 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7588 & 2.36 & 0.352015 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7579.85 & 2.21 & 0.298304 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7630.04 & 1.80 & 0.242226 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7561.45 & 2.81 & 0.465259 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 11154434.35 & 1.29 & 12.799825 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 11162903.71 & 1.10 & 12.752653 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11150240.06 & 1.32 & 12.749326 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 11156425.4 & 1.19 & 12.759103 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 11181858.71 & 1.01 & 12.752216 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 11164008.41 & 1.14 & 12.67755 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 11135236.78 & 1.51 & 12.745947 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 11149355.34 & 1.16 & 13.023176 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 11151755.87 & 1.29 & 12.743956 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11143741.49 & 1.35 & 12.800738 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24600543 & 1.14 & 25.435441 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24663905 & 0.97 & 25.29303 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 43053944 & 0.88 & 32.142121 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 43118902 & 0.73 & 32.07991 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 43011653 & 1.07 & 32.295398 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 66515370 & 0.74 & 38.65491 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 66575781 & 0.60 & 38.604845 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 66596130 & 0.59 & 38.822558 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 95096407 & 0.56 & 45.03496 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 95078923 & 0.59 & 46.95559 \\ \hline
+	\end{tabular}
+	\caption{Resultados del Enfriamiento Simulado segunda versión}
+	\label{}
+	\end{center}
+\end{table}
+
+\newpage
+\textbf{Enfriamiento simulado versión 3}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+		MDG-a\_1\_n500\_m50 & 7503.68 & 4.21 & 0.035391 \\ \hline
+		MDG-a\_2\_n500\_m50 & 7616.18 & 2.00 & 0.065185 \\ \hline
+		MDG-a\_3\_n500\_m50 & 7390.9 & 4.75 & 0.03146 \\ \hline
+		MDG-a\_4\_n500\_m50 & 7450.74 & 4.11 & 0.02706 \\ \hline
+		MDG-a\_5\_n500\_m50 & 7447.15 & 3.97 & 0.049311 \\ \hline
+		MDG-a\_6\_n500\_m50 & 7459.87 & 4.04 & 0.051728 \\ \hline
+		MDG-a\_7\_n500\_m50 & 7519.62 & 3.24 & 0.04686 \\ \hline
+		MDG-a\_8\_n500\_m50 & 7554.37 & 2.54 & 0.056807 \\ \hline
+		MDG-a\_9\_n500\_m50 & 7490.46 & 3.60 & 0.0433 \\ \hline
+		MDG-a\_10\_n500\_m50 & 7433.08 & 4.46 & 0.049834 \\ \hline
+		MDG-b\_21\_n2000\_m200 & 11153490.31 & 1.30 & 7.555939 \\ \hline
+		MDG-b\_22\_n2000\_m200 & 11110020.94 & 1.57 & 4.011747 \\ \hline
+		MDG-b\_23\_n2000\_m200 & 11121529.78 & 1.58 & 4.991886 \\ \hline
+		MDG-b\_24\_n2000\_m200 & 11135886.02 & 1.37 & 6.997175 \\ \hline
+		MDG-b\_25\_n2000\_m200 & 11125404.86 & 1.51 & 7.063434 \\ \hline
+		MDG-b\_26\_n2000\_m200 & 11200346.41 & 0.81 & 12.525884 \\ \hline
+		MDG-b\_27\_n2000\_m200 & 11123444.28 & 1.61 & 7.543947 \\ \hline
+		MDG-b\_28\_n2000\_m200 & 11152601.32 & 1.13 & 12.732243 \\ \hline
+		MDG-b\_29\_n2000\_m200 & 11153613.26 & 1.27 & 10.775145 \\ \hline
+		MDG-b\_30\_n2000\_m200 & 11095525.94 & 1.78 & 5.503966 \\ \hline
+		MDG-c\_1\_n3000\_m300 & 24638530 & 0.99 & 25.429986 \\ \hline
+		MDG-c\_2\_n3000\_m300 & 24611980 & 1.18 & 19.501333 \\ \hline
+		MDG-c\_8\_n3000\_m400 & 43067327 & 0.85 & 32.352137 \\ \hline
+		MDG-c\_9\_n3000\_m400 & 43053409 & 0.89 & 32.407405 \\ \hline
+		MDG-c\_10\_n3000\_m400 & 42939077 & 1.24 & 29.310709 \\ \hline
+		MDG-c\_13\_n3000\_m500 & 66582253 & 0.64 & 38.903866 \\ \hline
+		MDG-c\_14\_n3000\_m500 & 66592291 & 0.58 & 38.663022 \\ \hline
+		MDG-c\_15\_n3000\_m500 & 66566317 & 0.64 & 38.627055 \\ \hline
+		MDG-c\_19\_n3000\_m600 & 95089913 & 0.57 & 45.109599 \\ \hline
+		MDG-c\_20\_n3000\_m600 & 95082076 & 0.59 & 47.259715 \\ \hline
+	\end{tabular}
+\end{center}
+	\caption{Resultados del Enfriamiento Simulado tercera versión}
+	\label{}
+\end{table}
+
+\newpage
+\textbf{Búsqueda multiarranque básica}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 7712.41 & 1.55 & 0.016881 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7679.05 & 1.19 & 0.017119 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7713.09 & 0.60 & 0.017717 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7676.25 & 1.21 & 0.016254 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7678.14 & 0.99 & 0.018175 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7645.05 & 1.66 & 0.015232 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7669.83 & 1.31 & 0.015869 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7688.22 & 0.81 & 0.018087 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7650.44 & 1.54 & 0.019071 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7690.85 & 1.15 & 0.016993 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11185219.43 & 1.01 & 0.643558 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11164624.55 & 1.08 & 0.645764 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11181096.56 & 1.05 & 0.669538 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11162933.03 & 1.13 & 0.658882 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11180764.24 & 1.02 & 0.664427 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11184247.51 & 0.96 & 0.656049 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11176658.75 & 1.14 & 0.657572 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11165811.19 & 1.01 & 0.658754 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11181414 & 1.02 & 0.665456 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11174992.53 & 1.07 & 0.655536 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24655615 & 0.92 & 3.726733 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24624066 & 1.13 & 3.591083 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43095630 & 0.79 & 7.42543 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43035076 & 0.93 & 7.424318 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43075071 & 0.92 & 7.560634 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66556484 & 0.68 & 12.758743 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66523292 & 0.68 & 12.779268 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66557652 & 0.65 & 12.714156 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95022407 & 0.64 & 18.942945 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95006643 & 0.67 & 20.507988 \\ \hline
+				\end{tabular}
+							\end{center}
+				\caption{Resultados de la Búsqueda multiarranque básica}
+				\label{}
+
+			\end{table}
+		
+			
+			\newpage
+\textbf{Iterative Local Search}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 7619.6 & 2.73 & 0.007738 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7703.68 & 0.87 & 0.008425 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7692.22 & 0.87 & 0.008906 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7673.3 & 1.25 & 0.006773 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7642.03 & 1.46 & 0.008469 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7698.95 & 0.96 & 0.006153 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7619.52 & 1.96 & 0.007598 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7706.72 & 0.57 & 0.01111 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7696.93 & 0.94 & 0.006665 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7687.11 & 1.20 & 0.007095 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11221592.83 & 0.69 & 0.432231 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11212350.98 & 0.66 & 0.473368 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11257630.56 & 0.37 & 0.398343 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11224057.74 & 0.59 & 0.392823 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11220210.11 & 0.67 & 0.401019 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11205205.11 & 0.77 & 0.406654 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11228103.43 & 0.69 & 0.403328 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11221052.61 & 0.52 & 0.404951 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11218843.76 & 0.69 & 0.398336 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11192911.8 & 0.92 & 0.383134 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24776309 & 0.43 & 1.529762 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24760019 & 0.58 & 1.538959 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 43287246 & 0.35 & 2.941266 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 43227355 & 0.48 & 3.056526 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 43281674 & 0.45 & 2.944639 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66848792 & 0.25 & 5.223967 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66836311 & 0.21 & 5.359053 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66875251 & 0.18 & 5.432664 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 95387035 & 0.26 & 8.284411 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 95374556 & 0.28 & 7.346346 \\ \hline
+					& \multicolumn{1}{l|}{} & \multicolumn{1}{l|}{} & \multicolumn{1}{l|}{} \\ \hline
+				\end{tabular}
+					\end{center}
+				\caption{Resultados de la búsqueda local iterativa}
+				\label{}
+
+			\end{table}
+			
+	\newpage		
+\textbf{Iterative Local Search versión 2}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 7693.11 & 1.80 & 0.041519 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7708.74 & 0.81 & 0.046397 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7739.15 & 0.26 & 0.048144 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7758.61 & 0.15 & 0.056866 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7698.13 & 0.74 & 0.044648 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7715.01 & 0.76 & 0.04294 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7741.22 & 0.39 & 0.047083 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7684.64 & 0.85 & 0.046416 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7699.43 & 0.91 & 0.041623 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7713.42 & 0.86 & 0.047057 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 11149053.61 & 1.33 & 1.269768 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11154982.15 & 1.17 & 1.141834 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11193201.93 & 0.94 & 1.437461 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11149474.99 & 1.25 & 1.105185 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11177149.27 & 1.05 & 1.168833 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11133512.77 & 1.41 & 1.161558 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11203357.86 & 0.91 & 1.339872 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 11133588.62 & 1.30 & 1.160689 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11169465.09 & 1.13 & 1.088349 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11147321.52 & 1.32 & 1.108581 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24542832 & 1.37 & 6.801242 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24541173 & 1.46 & 7.3322 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42833103 & 1.39 & 14.093004 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42909525 & 1.22 & 14.109673 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42931477 & 1.25 & 14.357467 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 66328542 & 1.02 & 25.07074 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 66291310 & 1.03 & 24.124481 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 66300128 & 1.03 & 23.047678 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94712889 & 0.96 & 34.765983 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94679068 & 1.01 & 35.629243 \\ \hline
+				\end{tabular}
+							\end{center}
+				\caption{Resultados de la búsqueda local iterativa segunda versión}
+				\label{}
+
+			\end{table}
+			
+			
+\newpage		
+\textbf{Iterative Local Search con enfriamiento simulado}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 7621.39 & 2.71 & 1.044327 \\ \hline
+					MDG-a\_2\_n500\_m50 & 7640.43 & 1.69 & 1.036032 \\ \hline
+					MDG-a\_3\_n500\_m50 & 7612.31 & 1.90 & 0.968841 \\ \hline
+					MDG-a\_4\_n500\_m50 & 7632.12 & 1.78 & 1.067518 \\ \hline
+					MDG-a\_5\_n500\_m50 & 7605.3 & 1.93 & 1.071288 \\ \hline
+					MDG-a\_6\_n500\_m50 & 7601.34 & 2.22 & 1.031699 \\ \hline
+					MDG-a\_7\_n500\_m50 & 7594.72 & 2.28 & 0.951498 \\ \hline
+					MDG-a\_8\_n500\_m50 & 7584.74 & 2.14 & 0.978588 \\ \hline
+					MDG-a\_9\_n500\_m50 & 7622.81 & 1.90 & 0.984065 \\ \hline
+					MDG-a\_10\_n500\_m50 & 7675.95 & 1.34 & 0.982734 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 10983733.01 & 2.80 & 12.215443 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 11003615.06 & 2.51 & 12.439122 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 11002424.42 & 2.63 & 12.096516 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 11006395.73 & 2.52 & 12.098864 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 11009798.02 & 2.53 & 12.200119 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 11004446.44 & 2.55 & 11.828054 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 11026676.55 & 2.47 & 11.609973 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 10990952.26 & 2.56 & 11.745558 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 11020075.32 & 2.45 & 11.270717 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 11033151.03 & 2.33 & 11.285024 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 24236309 & 2.60 & 26.621994 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 24277132 & 2.52 & 26.350929 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 42468845 & 2.23 & 33.910087 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 42450200 & 2.27 & 33.336485 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 42488597 & 2.27 & 34.194774 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 65793728 & 1.82 & 41.117654 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 65761926 & 1.82 & 40.506943 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 65775859 & 1.82 & 41.201347 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 94120232 & 1.58 & 46.815538 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 94083932 & 1.63 & 47.482251 \\ \hline
+				\end{tabular}
+							\end{center}
+				\caption{Resultados de la búsqueda local iterativa con ES}
+				\label{}
+			\end{table}
+			
+\newpage
+\textbf{Iterative Local Search con enfriamiento simulado y esquema proporcional}
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|} 
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Caso}} & \textbf{Coste obtenido} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+					MDG-a\_1\_n500\_m50 & 6335.43 & 19.13 & 1.087402 \\ \hline
+					MDG-a\_2\_n500\_m50 & 6301.49 & 18.92 & 1.102967 \\ \hline
+					MDG-a\_3\_n500\_m50 & 6280.08 & 19.06 & 1.04335 \\ \hline
+					MDG-a\_4\_n500\_m50 & 6413.57 & 17.46 & 0.996363 \\ \hline
+					MDG-a\_5\_n500\_m50 & 6301.21 & 18.75 & 1.045147 \\ \hline
+					MDG-a\_6\_n500\_m50 & 6265.55 & 19.40 & 0.999544 \\ \hline
+					MDG-a\_7\_n500\_m50 & 6253.84 & 19.53 & 0.999302 \\ \hline
+					MDG-a\_8\_n500\_m50 & 6207.24 & 19.92 & 1.099883 \\ \hline
+					MDG-a\_9\_n500\_m50 & 6409.63 & 17.51 & 1.023551 \\ \hline
+					MDG-a\_10\_n500\_m50 & 6260.44 & 19.54 & 1.112417 \\ \hline
+					MDG-b\_21\_n2000\_m200 & 10021922.56 & 11.31 & 12.16016 \\ \hline
+					MDG-b\_22\_n2000\_m200 & 9985499.19 & 11.53 & 11.168514 \\ \hline
+					MDG-b\_23\_n2000\_m200 & 9977116.28 & 11.71 & 11.70662 \\ \hline
+					MDG-b\_24\_n2000\_m200 & 9995844.09 & 11.47 & 11.441743 \\ \hline
+					MDG-b\_25\_n2000\_m200 & 10032679.79 & 11.18 & 11.659981 \\ \hline
+					MDG-b\_26\_n2000\_m200 & 10019692.39 & 11.27 & 11.34339 \\ \hline
+					MDG-b\_27\_n2000\_m200 & 10026706.83 & 11.31 & 11.412562 \\ \hline
+					MDG-b\_28\_n2000\_m200 & 10029215.75 & 11.09 & 11.602571 \\ \hline
+					MDG-b\_29\_n2000\_m200 & 10025558.06 & 11.26 & 11.369525 \\ \hline
+					MDG-b\_30\_n2000\_m200 & 10002716.94 & 11.45 & 12.194783 \\ \hline
+					MDG-c\_1\_n3000\_m300 & 22489689 & 9.62 & 26.611388 \\ \hline
+					MDG-c\_2\_n3000\_m300 & 22526006 & 9.55 & 26.843193 \\ \hline
+					MDG-c\_8\_n3000\_m400 & 40066986 & 7.76 & 33.682657 \\ \hline
+					MDG-c\_9\_n3000\_m400 & 39980385 & 7.96 & 34.485605 \\ \hline
+					MDG-c\_10\_n3000\_m400 & 40018196 & 7.95 & 34.107439 \\ \hline
+					MDG-c\_13\_n3000\_m500 & 62597915 & 6.59 & 40.202515 \\ \hline
+					MDG-c\_14\_n3000\_m500 & 62508742 & 6.67 & 39.664199 \\ \hline
+					MDG-c\_15\_n3000\_m500 & 62552343 & 6.63 & 39.752276 \\ \hline
+					MDG-c\_19\_n3000\_m600 & 90032871 & 5.86 & 46.577802 \\ \hline
+					MDG-c\_20\_n3000\_m600 & 90069830 & 5.83 & 46.334917 \\ \hline
+				\end{tabular}
+				\end{center}
+				\caption{Resultados de la búsqueda local iterativa con ES y esquema proporcional}
+				\label{}
+			\end{table}
+			
+
+
+\subsection{Comparación entre los algoritmos}
+Mostramos ahora una tabla con la media de los estadísticos (desviación  y tiempo de ejecución) para cada uno de los cuatro algoritmos:
+\begin{table}[H]
+	\begin{center}
+		\begin{tabular}{|l|c|c|}
+			\hline
+			\multicolumn{1}{|c|}{\textbf{Algoritmo}} & \textbf{Desv} & \textbf{Tiempo (s)} \\ \hline
+			Greedy & 9.22 & 1.2 \\ \hline
+			BL & 1.22 & 0.55 \\ \hline
+			ES & 1.43 & 16.22 \\ \hline
+			ES-Prop & 5.91 & 17.03 \\ \hline
+			ES2 & 1.40 & 16.22 \\ \hline
+			ES3 & 1.97 & 14.26 \\ \hline
+			BMB & 1.02 & 3.81 \\ \hline
+			ILS & 0.76 & 1.59 \\ \hline
+			ILS2 & 1.04 & 7.06 \\ \hline
+			ILS-ES & 2.19 & 16.68 \\ \hline
+			ILS-ES-Prop & 12.57 & 16.49 \\ \hline
+		\end{tabular}
+	\end{center}
+	\caption{Comparativa de estadísticos medios obtenidos por distintos algoritmos para el MDP}
+	\label{}
+\end{table}
+
+	\subsection{Análisis de los resultados}
+	
+	Para tener una visión global de los resultados obtenidos por los distintos algoritmos empezamos observando la Tabla 12. Nos damos cuenta de que el algoritmo de ILS-ES-Prop ofrece una desviación exageradamente alta, seguido por el algoritmo Greedy. Ya sabemos que este último no explora el espacio de soluciones con tanta profundidad como lo hacen el resto de algoritmos considerados, de ahí que presente una deviación alta. Por otra parte, el algoritmo ILS presenta el mejor de los resultados, con una desviación menor que 1, seguido por la BMB y la segunda versión de ILS. 
+	
+	En cuanto al tiempo de ejecución, la BL sigue siendo la más rápida, debido a la factorización que se hace de la función objetivo en todas las evaluaciones de las soluciones, seguida por Greedy y la ILS. 
+	
+	Analizamos estos aspectos con más detalle a continuación.
+	
+	Comenzamos analizando los resultados del \textbf{enfriamiento simulado}. Este algoritmo, a diferencia de la búsqueda local, acepta soluciones peores a la actual, de manera que permite salir de óptimos locales, en los que la BL se quedaría atrapada. Así, la diversificación en este algoritmo es mayor que en la BL. Por otra parte, el operador de generación de soluciones vecinas en el ES cambia posiciones aleatorias de la solución por un elemento aleatorio no seleccionado en la misma, mientras que en el caso de la BL eran los elementos que menos contribuían los que se cambiaban por los elementos no seleccionados más prometedores.  Esto hace que en la búqueda local la convergencia hacia óptimos locales sea más rápida que en el enfriamiento simulado, de modo que en BL hay una mayor explotación de las soluciones. 
+	
+	Podemos ver que el ES proporciona un valor de la desviación algo más alto que la BL. Aunque ES permite salir de óptimos locales y presenta mayor diversificación, la convergencia de la búsqueda local es más rápida, de modo que es probable que ES necesite más iteraciones para converger a un óptimo local adecuado, es decir, que sea necesario aumentar la intensificación frente a la diversificación en el mismo. El esquema de enfriamiento de Cauchy modificado permite que el enfriamiento sea más rápido si el número de iteraciones es pequeño, buscando así un equilibrio entre intensificación y diversificación. Sin embargo, puede ser que el número de iteraciones no sea suficiente para permitir una adecuada explotación de las soluciones en las últimas iteraciones, que es cuando la temperatura es baja y se aceptan muy pocas soluciones peores. 
+	
+	El hecho recién comentado también hace que los resultados proporcionados por ILS con búsqueda local sean mucho mejores que con el enfriamiento simulado. En este caso la diferencia entre ambas versiones es bastante considerable, pues pasa de una desviación de 0.76 con la búsqueda local a 2.19 con el enfriamiento simulado. En ILS se dejan incluso menos iteraciones para el ES, lo que hace que la diferencia en este caso sea más acusada. 
+	
+	La BL es mucho más rápida que el ES. Esto puede ser debido a que en el operador de vecino del ES se deben generar dos posiciones aleatorias cada vez que se usa, y esto es costoso, mientras que en la generación de vecinos en la BL esto no era necesario. La factorización de la función objetivo se lleva acabo de la misma forma en ES y en BL, por lo que esto no debería suponer un aumento o disminución del tiempo de ejecución entre los dos algoritmos. 
+	
+	La \underline{segunda versión} considerada del ES presenta una desviación prácticamente igual que el ES original estudiado. En este caso lo que hacemos es aumentar la probabilidad de elegir soluciones peores, de manera que aumenta aún más la diversifación, pudiendo el algoritmo salta a soluciones peores con una mayor frecuencia. No obstante esto no hace que mejores los resultados, ni tampoco que empeores. 
+	
+	En la \underline{tercera versión} se generan menos vecinos como máximo, pasando de $ 10m $ en el original a $m$, de manera que M también aumenta, pues recordemos que $M=100000/max\_vecinos$, y entonces el enfriamiento es más lento. Esto implica que haya aún más diversificación y menos intensificación, motivo por el cual los resultados con esta tercera versión empeoran. El equilibrio entre exploración y explotación (diversificación e intensificación) se rompe a favor de la primera. ´
+	
+	Todas las versiones del enfriamineto simulado tienen aproximadamente el mismo tiempo de ejecución, pues no se realizan cambios significativos que afecten a la eficiencia del algoritmo. 
+	
+	En el caso en el que se usa el \underline{esquema de enfriamiento proporcional} los resultados son realmente malos. En el esquema de Cauchy modificado la temperatura se enfría muy rápidamente al principio y más lento al final, cuando las soluciones son mejores y se aboga más por la explotación. Además, permite adaptar la temperatura al número de iteraciones M, el cual depende a su vez del número de evaluaciones límite de la función objetivo y del número máximo de vecinos (que depende del tamaño de las soluciones, $ m $). En cambio, en el esquema proporcional, el decrecimiento de la temperatura es lineal, se realiza según un parámetro fijo $\alpha$  y no se ve afectado por el tamaño de las soluciones o por el número de evaluaciones límite de la función objetivo. 
+	
+	Este hecho hace que para los casos de estudio del \textit{tipo a}, donde m es menor, el esquema proporcional con parámetro $\alpha=0.9$ proporcione mejores resultados que el esquema de Cauchy modificado, como podemos ver en las Tablas 3 y 4. Sin embargo, para los casos del \textit{tipo b y c}, donde m es más grande, el esquema proporcional ofrece mayores desviaciones que el de Cauchy modificado, pues el primero no es capaz de adaptarse al tamaño del problema. 
+	
+	Es posible que se pueda determinar un valor de $\alpha$ para el cual el esquema proporcional sea mejor, en función del tamaño del problema, pues hemos visto que para los ejemplos del \textit{tipo a} $\alpha=0.9$ proporciona resultados satisfactorios. 
+	
+	Por otra parte, dado que con el esquema proporcional la temperatura disminuye más gradualmente, se aceptan más soluciones peores que con Cauchy modificado, de manera que hay una diversificación aún mayor y menor intensificación, por lo que la convergencia se hace aún más lenta y al algoritmo no le da tiempo a encontrar un óptimo local lo suficientemente bueno, sobre todo para los problemas de mayor tamaño como los del \textit{tipo b ó c}
+		
+	En el algoritmo híbrido ILS con ES observamos en las Tablas 10 y 11 que para todos los casos de estudio el esquema proporcional presenta las mayores desviaciones, siendo estas considerablemente grandes, incluso para los casos del \textit{tipo a}, por lo que deducimos que $\alpha=0.9$ no es adecuado en este algoritmo para ninguno de los casos de estudio y quizás debería ajustarse para que ofrezca resultados decentes. 
+	
+	Por lo tanto, podemos decir que el esquema de enfriamiento de Cauchy modificado es más adecuado en general que el esquema proporcional, pues se adapta a cualquier problema, mientras que el proporcional debería ser configurado a mano. 
+	
+	Pasamos ahora a analizar la \textbf{búsqueda multiarranque básica}. En este caso se aplicaba la búsqueda local a 10 soluciones generadas aleatoriamente. Puesto que hay que generar las soluciones aleatorias, lo cual ya sabemos que es costoso, el tiempo de ejecución de este algoritmo es ligeramente superior al de la búsqueda local y al de ILS. Por otro lado vemos que presenta una desviación menor que la búsqueda local pero mayor que ILS. Esto es debido a que con BMB se le añade algo más de diversificación a la BL, sin perder la propiedad de intensificación con la que esta cuenta, ya que, aunque se disminuyen el número máximo de evaluaciones a 10000 en la BL, la rápida convergencia de ésta hace que la disminución no sea notoria. 
+	
+	Por su parte la \textbf{búsqueda local iterativa} es similar a la BMB, salvo que en vez de considerar soluciones aleatorias, se mutan considerablemenete las mejores soluciones encontradas hasta el momento, de modo que hay diversificación, pues el algoritmo se aleja lo suficiente de la mejor solución, lo que permite escapar de óptimos locales. Pero también está presente la intensificación de la búsqueda local y el hecho de que se cambian soluciones buenas, y no cualesquiera aleatorias, como es el caso de BMB. Esto hace que ILS supere en resultados a BMB. Así, se añade más exploración a la búsqueda local, de manera que los óptimos que se encuentran son mejores, pero también tenemos una considerable explotación de las mejores soluciones. Todo esto da lugar a unas muy buenas soluciones, con una desviación media menor a 1, y posiciona al algoritmo ILS como el mejor de los estudiados hasta la fecha para el problema MDP. 
+	
+	En cuanto al tiempo de ejecución, ILS es algo más lenta que la BL, pues en la mutación de las soluciones estas se evalúan en su totalidad, y no de manera factorizada como ocurría en BL. Sin embargo, como en ILS sólo se genera una solución aleatoria y no 10, ILS es más rápida que BMB, en la cual la evaluación de las soluciones aleatorias tampoco se lleva a cabo de manera factorizada, otro aspecto que hace que BMB sea maś lenta que la BL. 
+	
+	Analizamos finalmente la \underline{segunda versión} de ILS. Aquí le dejamos menos iteraciones a cada aplicación de la búsqueda local, pues esta converge bastante rápido, y consideramos más mutaciones de las soluciones mejores, de manera que se fomenta la exploración del entorno un poco más frente a la explotación. No obstante la idea no ha sido demasiado buena, pues los resultados han empeorado ligeramente. Podemos deducir así que al favorecer la diversificación las soluciones empeoran, pues quizás la BL no tiene ahora suficientes iteraciones y la intensificación no es tan notoria como antes, a pesar de la rápida convergencia de la BL. 
+	
+	Como en esta nueva versión hay más mutaciones y, por lo tanto, más evaluaciones de soluciones completas, el tiempo de ejecución aumenta bastante frente al de la versión original que consideramos para ILS. 
+	
+\end{document}
