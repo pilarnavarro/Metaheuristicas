@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/pilar/pilar/quinto/MH/practicas/Trabajo final/cec2017real/code/CLONALG.cpp
+cec17.h
+/home/pilar/pilar/quinto/MH/practicas/Trabajo final/cec2017real/code/cec17.h
+iostream
+-
+assert.h
+-
+vector
+-
+algorithm
+-
+random
+-
+limits
+-
+
+/home/pilar/pilar/quinto/MH/practicas/Trabajo final/cec2017real/code/cec17.h
+
